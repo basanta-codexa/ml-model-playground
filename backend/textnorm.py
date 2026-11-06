@@ -141,11 +141,9 @@ def group_variants(values) -> list[dict]:
         variants = group["variants"]
         if len(variants) < 2:
             continue
-        # Prefer a spelling that isn't all caps, then the most common one.
-        best = sorted(
-            variants.items(),
-            key=lambda item: (looks_shouty(item[0]), -item[1]),
-        )[0][0]
+        # Prefer a spelling that isn't all caps, then the most common one,
+        # then one that starts with a capital.
+        best = min(variants.items(), key=_spelling_rank)[0]
         out.append({
             "canonical": best,
             "variants": [
@@ -156,3 +154,35 @@ def group_variants(values) -> list[dict]:
         })
     out.sort(key=lambda g: (-g["merged"], g["canonical"].lower()))
     return out
+
+
+def _spelling_rank(item):
+    """Order spellings from most to least readable.
+
+    Not all caps beats all caps; then the more common wins; then a leading
+    capital beats a leading lowercase letter.
+    """
+    text, count = item
+    return (looks_shouty(text), -count, 0 if text[:1].isupper() else 1)
+
+
+def display_spellings(values) -> dict[str, str]:
+    """Pick the most readable spelling for each canonical group.
+
+    Returns canonical key -> the spelling to show. The rule matches
+    group_variants: prefer a spelling that is not all caps, then the most
+    common one, then a leading capital. Both paths that merge spellings
+    (features and target labels) call this, so they never disagree.
+    """
+    per_key: dict[str, dict[str, int]] = {}
+    for raw in values:
+        text = clean_text(raw)
+        if not text or is_nullish(text):
+            continue
+        key = canonical_key(text)
+        bucket = per_key.setdefault(key, {})
+        bucket[text] = bucket.get(text, 0) + 1
+    return {
+        key: min(bucket.items(), key=_spelling_rank)[0]
+        for key, bucket in per_key.items()
+    }

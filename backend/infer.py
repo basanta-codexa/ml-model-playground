@@ -1,7 +1,7 @@
 """Work out what each column really contains, and clean it up accordingly.
 
-This is the layer that fixes the classic failure: a column of "963 hp",
-"$1,100,000" and "70-85 hp" that pandas calls "object" and a model would
+This is the layer that fixes the classic failure: a column of "2.5 s",
+"$1,100" and "3-5 days" that pandas calls "object" and a model would
 then one-hot encode into a thousand useless columns.
 
 The steps for one column:
@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from parsing import parse_column, suggest_extra_units
-from textnorm import canonical_key, clean_text, group_variants, is_nullish
+from textnorm import canonical_key, clean_text, display_spellings, group_variants, is_nullish
 from units import BASE_UNIT, convert, unit_dimension
 
 # Share of a column's non-blank cells that must parse as numbers before we
@@ -231,16 +231,8 @@ def clean_categorical(series: pd.Series, info: ColumnInfo) -> pd.Series:
     lives in the scikit-learn pipeline instead.
     """
     values = series.tolist()
-    # Pick the display spelling for each canonical group.
-    display: dict[str, str] = {}
-    for raw in values:
-        text = clean_text(raw)
-        if not text or is_nullish(text):
-            continue
-        key = canonical_key(text)
-        current = display.get(key)
-        if current is None or (text.isupper() and not current.isupper()):
-            display[key] = text
+    # One display spelling per canonical group: the readable, most common one.
+    display = display_spellings(values)
 
     cleaned = []
     for raw in values:

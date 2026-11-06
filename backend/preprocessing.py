@@ -5,9 +5,9 @@ groupers and scalers on the training rows only. Fitting on everything would
 leak information from the test set into training (data leakage).
 
 Before the split we do the cleaning that needs no learning: reading numbers
-out of "963 hp", turning "1.6 L" into 1600 cc, folding "TOYOTA" and "Toyota"
-into one company. None of that looks at the test rows' statistics, so it
-cannot leak.
+out of "3-5 days", turning "750 ml" and "1 l" into one scale, folding
+"IN-STORE" and "In-store" into one value. None of that looks at the test
+rows' statistics, so it cannot leak.
 
 The result is not just a matrix. It also explains itself: every decision we
 made is in the report, because a tool that silently renames your columns is
@@ -31,7 +31,7 @@ from infer import clean_frame, infer_column
 from leakage import detect_leakage
 from parsing import parse_column
 from target import MAX_CLASSES, detect_task
-from textnorm import canonical_key, clean_text
+from textnorm import canonical_key, clean_text, display_spellings
 from transformers import RareCategoryGrouper
 
 MIN_ROWS = 10
@@ -314,8 +314,14 @@ def prepare(df: pd.DataFrame, cfg: PreprocessConfig) -> tuple[Prepared, dict]:
         y = encoder.fit_transform(y_raw.astype(str))
         class_names = [_label(c) for c in encoder.classes_]
     else:
-        y = pd.to_numeric(data[cfg.target], errors="coerce").to_numpy(dtype="float64")
-        y = y[~np.isnan(y)]
+        y_series = pd.to_numeric(data[cfg.target], errors="coerce")
+        bad = int(y_series.isna().sum())
+        if bad:
+            # Unreachable: rows without a readable target were removed earlier.
+            # Still fail loudly instead of silently shortening y below X.
+            raise PreprocessError(
+                f"{bad} row(s) could not be read as numbers in '{cfg.target}'.")
+        y = y_series.to_numpy(dtype="float64")
         class_names = []
         n_classes = 0
 
@@ -345,7 +351,7 @@ def prepare(df: pd.DataFrame, cfg: PreprocessConfig) -> tuple[Prepared, dict]:
             "key": "parse",
             "title": "Read numbers out of text",
             "detail": f"{_names([i.name for i in parsed], 4)} held numbers written "
-                      f"with units or symbols (\"963 hp\", \"$1,100,000\"). We pulled "
+                      f"with units or symbols (\"2.5 s\", \"$4,500\"). We pulled "
                       f"the numbers out so they are numbers, not labels.",
             "why": "A column of measurements should be one number column. As text "
                    "it becomes thousands of one-off categories and the model learns nothing.",
@@ -394,8 +400,9 @@ def prepare(df: pd.DataFrame, cfg: PreprocessConfig) -> tuple[Prepared, dict]:
                 "key": "rare",
                 "title": "Roll rare values into one bucket",
                 "detail": f"{_names([i.name for i in grouped], 4)} had hundreds of "
-                          f"one-off values. Values seen fewer than {cfg.rare_threshold} "
-                          f"times in training now count as 'other'.",
+                          f"one-off values. Values that barely appear (fewer than 1% of the "
+                          f"training rows, or fewer than your {cfg.rare_threshold} cap) now "
+                          f"count as 'other'.",
                 "why": "One-hot encoding hundreds of one-off names gives hundreds of "
                        "almost-empty columns. The popular ones carry the signal; the "
                        "rest do not.",
@@ -541,16 +548,8 @@ def prepare_target_values(data: pd.DataFrame, cfg: PreprocessConfig,
         return values, {"notes": notes, "unit": unit}
 
     # Classification: fold spelling variants together so "TOYOTA" and
-    # "Toyota" are one class, then keep the readable spelling for display.
-    display: dict[str, str] = {}
-    for raw in series:
-        text = clean_text(raw)
-        if not text:
-            continue
-        key = canonical_key(text)
-        current = display.get(key)
-        if current is None or (text.isupper() and not current.isupper()):
-            display[key] = text
+    # "Toyota" are one class, keeping the readable, most common spelling.
+    display = display_spellings(series.tolist())
 
     values = pd.Series(
         [display.get(canonical_key(clean_text(raw)), clean_text(raw)) if clean_text(raw) else None
