@@ -1,7 +1,7 @@
 """Pull real numbers out of messy cells.
 
-Real files write numbers the way people talk: "963 hp", "$1,100,000",
-"2.5 sec", "70-85 hp", or "1,600 cc / 13.8 kwh". Treated as text, a column
+Real files write numbers the way people talk: "963 hp", "$1,100",
+"2.5 s", "3-5 days", or "500 ml / 180 g". Treated as text, a column
 like that becomes a category with thousands of spellings, and one-hot
 encoding turns it into thousands of useless columns. Parsed properly,
 "1,600 cc" and "1.6 L" both become 1600 and the column becomes a single
@@ -121,8 +121,8 @@ def _find_currency(text: str) -> tuple[str | None, str]:
 def _replace_ranges(text: str) -> tuple[str, list[tuple[float, float, str | None]]]:
     """Fold "70-85 hp" into its midpoint, and remember it was a range.
 
-    Ranges are not errors, but they lose information: a car with "70-85 hp"
-    is not the same as one with 77.5 hp. We keep the midpoint for training
+    Ranges are not errors, but they lose information: "3-5 days" is not the
+    same as "4 days". We keep the midpoint for training
     and report the range so the user knows.
     """
     found: list[tuple[float, float, str | None]] = []

@@ -1,9 +1,9 @@
 """Find the columns that give the answer away.
 
-"Leakage" is when a feature column contains the target in disguise. A car
-file whose "Engines" column literally says "Diesel" or "Petrol", while the
-target column is "Fuel Types", is the classic example: the model does not
-learn to predict fuel type, it learns to read it off a second column. The
+"Leakage" is when a feature column contains the target in disguise. A sales
+export whose "Segment Code" literally says "ONLINE" or "IN-STORE", while the
+target column is "Channel", is the classic example: the model does not
+learn to predict channel, it learns to read it off a second column. The
 score looks great and means nothing.
 
 The distinction that matters is between a leak and a good feature:
@@ -72,7 +72,7 @@ def _purity(feature: pd.Series, target: pd.Series) -> float:
 def _names_a_target_label(value, target_words) -> bool:
     """True when this value names one of the target's labels.
 
-    "Diesel Engine" still names "Diesel". We compare whole words, not
+    "ONLINE" still names "Online". We compare whole words, not
     letters, so "North" is not read as the target label "No".
     """
     text = canonical_key(value)
@@ -150,8 +150,8 @@ def detect_leakage(df: pd.DataFrame, target: str, task: str) -> list[dict]:
         feature_text = feature_text[keep]
         target_for_feature = target_text[keep]
 
-        # Way 1: the column uses the target's own words. "Engines" that says
-        # "Diesel" and "Petrol", under a target of "Fuel Types", is a copy
+        # Way 1: the column uses the target's own words. A derived column that
+        # says "ONLINE" and "IN-STORE", under a target of "Channel", is a copy
         # wearing a disguise.
         shares_words = (
             len(feature_words) >= 2
@@ -160,7 +160,7 @@ def detect_leakage(df: pd.DataFrame, target: str, task: str) -> list[dict]:
         )
         if not shares_words and len(feature_words) >= 2:
             # Not the same words, but every value still names a label:
-            # "Diesel Engine", "Petrol Engine" and so on.
+            # "Online Order", "In-store Pickup" and so on.
             values = [v for v in feature_text.unique() if canonical_key(v)]
             shares_words = all(_names_a_target_label(v, target_words) for v in values)
 

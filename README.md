@@ -5,8 +5,8 @@ units, prices cleaned up, spellings folded together, and a model scored
 honestly against a baseline. Every step explains itself in plain language.
 
 It works on any kind of file. There is nothing in the code that knows what
-domain you are in: a spreadsheet of car listings, a survey, a sales export
-and a scientific dataset all go down the same path.
+domain you are in: a sales export, a survey, a scientific dataset,
+a spreadsheet of hospital records and a price list all go down the same path.
 
 > Work in progress, built step by step.
 
@@ -17,14 +17,14 @@ tools assume your CSV is tidy. This one does not.
 
 | Problem in a real file | What happens here |
 | --- | --- |
-| `"963 hp"`, `"$1,100,000"`, `"2.5 sec"` are read as text | They are read as **numbers**, with the units and currency symbols taken off |
-| `"70-85 hp"` is a range | It becomes the midpoint, and we tell you it was a range |
+| `"$1,100"`, `"963 hp"`, `"2.5 s"` are read as text | They are read as **numbers**, with the units and currency symbols taken off |
+| `"3-5 days"` is a range | It becomes the midpoint, and we tell you it was a range |
 | `"1,600 cc / 13.8 kwh"` mixes two measurements | The column is **split** into a cc column and a kWh column |
 | `"1.6 L"` and `"1,600 cc"` are the same thing | Both are converted to one scale |
 | `TOYOTA` and `Toyota` are counted as two companies | They are folded into **one** value |
 | `2–6 seats` uses a Windows dash | The dash is normalised, and the range is read |
 | `-` and `N/A` become a category | They are treated as **missing** and filled |
-| 1,201 car names become 1,201 columns | Rare values are rolled into one `other` bucket |
+| Rare values appear hundreds of times as their own columns | They are rolled into one `other` bucket |
 | A column gives the target away | It is **detected and dropped**, with the reason explained |
 | The target has 23 classes, or is a number | Any column can be the target. Classification **and** regression |
 
