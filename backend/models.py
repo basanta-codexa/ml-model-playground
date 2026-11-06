@@ -1,10 +1,8 @@
 """The model registry: every algorithm the playground offers.
 
-To add an algorithm later, add one entry here. Nothing else needs to change.
-
-Each entry says which task it can do. A classifier predicts a label, a
-regressor predicts a number, and the playground only offers what fits the
-task the user's data calls for.
+Each entry says which task it can do, whether it accepts class weights
+(used when the target is imbalanced), and a small tuning grid for the
+"quick tune" option. To add an algorithm later, add one entry here.
 """
 
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -24,6 +22,8 @@ MODELS = {
         "strengths": ["Very fast", "Weights are easy to read", "Gives probabilities"],
         "weaknesses": ["Only straight boundaries", "Likes scaled features"],
         "tasks": ["classification"],
+        "class_weight": True,
+        "grid": {"C": [0.1, 1.0, 10.0]},
         "build": lambda seed: LogisticRegression(max_iter=1000),
     },
     "knn": {
@@ -36,6 +36,8 @@ MODELS = {
         "strengths": ["Simple idea", "Handles curvy boundaries"],
         "weaknesses": ["Slow on big data", "Hurt by unscaled or useless columns"],
         "tasks": ["classification"],
+        "class_weight": False,   # KNN has no class weights
+        "grid": {"n_neighbors": [3, 5, 7, 9, 15]},
         "build": lambda seed: KNeighborsClassifier(n_neighbors=5),
     },
     "random_forest": {
@@ -49,6 +51,8 @@ MODELS = {
         "strengths": ["Strong default choice", "Resists overfitting", "Ranks feature importance"],
         "weaknesses": ["Harder to explain", "Bigger and slower"],
         "tasks": ["classification"],
+        "class_weight": True,
+        "grid": {"max_depth": [None, 6, 12], "min_samples_leaf": [1, 2, 4]},
         "build": lambda seed: RandomForestClassifier(n_estimators=100, random_state=seed),
     },
     "decision_tree": {
@@ -61,6 +65,8 @@ MODELS = {
         "strengths": ["Very easy to read", "Handles mixed column types"],
         "weaknesses": ["Overfits easily", "A single split can ruin it"],
         "tasks": ["classification"],
+        "class_weight": True,
+        "grid": {"max_depth": [None, 6, 12], "min_samples_leaf": [1, 2, 4]},
         "build": lambda seed: DecisionTreeClassifier(random_state=seed),
     },
     "linear_regression": {
@@ -74,6 +80,8 @@ MODELS = {
         "strengths": ["Very fast", "Weights are easy to read"],
         "weaknesses": ["Only straight-line patterns", "Sensitive to odd numbers"],
         "tasks": ["regression"],
+        "class_weight": False,
+        "grid": {},              # a plain straight-line fit has nothing to tune
         "build": lambda seed: LinearRegression(),
     },
     "ridge": {
@@ -86,6 +94,8 @@ MODELS = {
         "strengths": ["Resists overfitting", "Handles correlated features"],
         "weaknesses": ["Still only straight lines", "Needs the penalty tuned"],
         "tasks": ["regression"],
+        "class_weight": False,
+        "grid": {"alpha": [0.1, 1.0, 10.0]},
         "build": lambda seed: Ridge(alpha=1.0, random_state=seed),
     },
     "knn_regressor": {
@@ -98,6 +108,8 @@ MODELS = {
         "strengths": ["Simple idea", "No training step"],
         "weaknesses": ["Slow on big data", "Needs scaled features"],
         "tasks": ["regression"],
+        "class_weight": False,
+        "grid": {"n_neighbors": [3, 5, 7, 9, 15]},
         "build": lambda seed: KNeighborsRegressor(n_neighbors=5),
     },
     "random_forest_regressor": {
@@ -110,6 +122,8 @@ MODELS = {
         "strengths": ["Strong default for numbers", "Handles odd relationships"],
         "weaknesses": ["Bigger and slower", "Harder to explain"],
         "tasks": ["regression"],
+        "class_weight": False,
+        "grid": {"max_depth": [None, 6, 12], "min_samples_leaf": [1, 2, 4]},
         "build": lambda seed: RandomForestRegressor(n_estimators=100, random_state=seed),
     },
     "decision_tree_regressor": {
@@ -122,6 +136,8 @@ MODELS = {
         "strengths": ["Easy to read", "Handles mixed column types"],
         "weaknesses": ["Overfits easily", "Choppy predictions"],
         "tasks": ["regression"],
+        "class_weight": False,
+        "grid": {"max_depth": [None, 6, 12], "min_samples_leaf": [1, 2, 4]},
         "build": lambda seed: DecisionTreeRegressor(random_state=seed),
     },
 }
@@ -132,14 +148,31 @@ _PUBLIC_FIELDS = ("label", "tagline", "how_it_thinks",
 
 def list_models(task: str | None = None) -> list[dict]:
     # The "build" lambda can't be sent as JSON, so we only expose the text fields
-    models = [{"id": key, **{f: m[f] for f in _PUBLIC_FIELDS}} for key, m in MODELS.items()]
+    models = [{"id": key,
+               **{f: m[f] for f in _PUBLIC_FIELDS},
+               "tunable": bool(m["grid"])}
+              for key, m in MODELS.items()]
     if task:
         models = [m for m in models if task in m["tasks"]]
     return models
 
 
-def build_model(model_id: str, seed: int):
-    return MODELS[model_id]["build"](seed)
+def build_model(model_id: str, seed: int, class_weight: str | None = None):
+    """Instantiate the estimator, passing class weights when the model takes them."""
+    entry = MODELS[model_id]
+    kwargs = {}
+    if class_weight and entry["class_weight"]:
+        kwargs["class_weight"] = class_weight
+    build = entry["build"]
+    # Builders are parameterless lambdas today; give weighted models the weight.
+    if kwargs:
+        return build(seed).set_params(**kwargs)
+    return build(seed)
+
+
+def tuning_grid(model_id: str) -> dict:
+    """The small grid used by the 'quick tune' option (empty = not tunable)."""
+    return dict(MODELS[model_id]["grid"])
 
 
 def supports_task(model_id: str, task: str) -> bool:
