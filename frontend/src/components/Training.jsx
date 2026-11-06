@@ -15,6 +15,7 @@ export default function Training({ dataset, prepared }) {
     const [phase, setPhase] = useState("idle"); // "idle" | "training"
     const [ready, setReady] = useState(false);
     const [error, setError] = useState("");
+    const [tune, setTune] = useState(false);
 
     const alive = useRef(true);
     useEffect(() => {
@@ -47,7 +48,7 @@ export default function Training({ dataset, prepared }) {
         setError("");
         try {
             // Wait for BOTH the real answer and a minimum animation time
-            const [res] = await Promise.all([trainModel(dataset.dataset_id, selected), sleep(1400)]);
+            const [res] = await Promise.all([trainModel(dataset.dataset_id, selected, tune), sleep(1400)]);
             if (!alive.current) return;
             setReady(true);
             await sleep(400);
@@ -103,8 +104,23 @@ export default function Training({ dataset, prepared }) {
                     disabled={phase === "training" || !current}
                     className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
                 >
-                    {phase === "training" ? "Training…" : `Train ${current?.label ?? "model"}`}
+                    {phase === "training" ? "Training…" : tune && current?.tunable ? `Tune & train ${current?.label}` : `Train ${current?.label ?? "model"}`}
                 </button>
+
+                {current?.tunable && (
+                    <label
+                        className="flex cursor-pointer select-none items-center gap-2 text-sm text-muted"
+                        title="Try a handful of settings with a small randomized search, refit the best, and tell you which one won. A little slower, usually a little better."
+                    >
+                        <input
+                            type="checkbox"
+                            checked={tune}
+                            onChange={(e) => setTune(e.target.checked)}
+                            className="h-4 w-4 accent-blue-600"
+                        />
+                        Quick tune
+                    </label>
+                )}
             </div>
 
             {error && (

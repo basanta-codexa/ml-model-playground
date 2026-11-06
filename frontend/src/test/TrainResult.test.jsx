@@ -124,6 +124,49 @@ describe("TrainResult", () => {
     });
 });
 
+const classificationWithPhase3 = {
+    ...classificationResult,
+    cv_auc: {
+        metric: "auc",
+        folds: [0.93, 0.97, 0.9, 0.96, 0.94],
+        mean: 0.94,
+        std: 0.03,
+        n_splits: 5,
+    },
+    cv_baseline_auc: {
+        metric: "auc",
+        folds: [0.5, 0.5, 0.5, 0.5, 0.5],
+        mean: 0.5,
+        std: 0,
+        n_splits: 5,
+    },
+    class_weight: "balanced",
+    tuned: { params: { max_depth: 12, min_samples_leaf: 2 } },
+    per_class: [
+        { label: "setosa", precision: 100, recall: 100, f1: 100, support: 10 },
+        { label: "versicolor", precision: 88, recall: 80, f1: 84, support: 11 },
+        { label: "virginica", precision: 85, recall: 89, f1: 87, support: 9 },
+    ],
+};
+
+describe("Phase 3 scoring extras", () => {
+    it("shows the AUC and the balanced-weight note", () => {
+        render(<TrainResult result={classificationWithPhase3} />);
+        expect(screen.getByText(/AUC/i)).toBeTruthy();
+        expect(screen.getByText(/weighted equally/i)).toBeTruthy();
+        expect(screen.getByText(/tuned: max_depth=12/i)).toBeTruthy();
+    });
+
+    it("renders the per-class table with add-up supports", () => {
+        render(<TrainResult result={classificationWithPhase3} />);
+        expect(screen.getByText("Precision")).toBeTruthy();
+        expect(screen.getByText("Recall")).toBeTruthy();
+        const supports = classificationWithPhase3.per_class.map((c) => c.support);
+        expect(supports.reduce((a, b) => a + b, 0)).toBe(classificationResult.test_rows);
+        expect(screen.getAllByText("versicolor").length).toBeGreaterThan(0);
+    });
+});
+
 describe("ConfusionMatrix", () => {
     it("draws one cell per pair of classes", () => {
         render(

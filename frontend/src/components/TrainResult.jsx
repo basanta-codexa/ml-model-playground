@@ -13,6 +13,60 @@ const TRAIN = "#94a3b8";
 const CV = "#2563eb";
 const HOLDOUT = "#93c5fd";
 
+// Quiet footnotes about how the model was built and scored. Absent fields
+// render nothing, so un-tuned runs show nothing extra.
+function RunNotes({ result }) {
+    const notes = [];
+    if (result.cv_auc) {
+        const isBinary = result.class_names?.length === 2;
+        const kind = isBinary ? "binary" : "one-vs-rest, macro";
+        notes.push(`AUC (${kind}): ${result.cv_auc.mean.toFixed(3)} ± ${result.cv_auc.std.toFixed(3)}`);
+    }
+    if (result.class_weight) {
+        notes.push("Target was imbalanced, so the classes were weighted equally");
+    }
+    if (result.tuned?.params) {
+        const params = Object.entries(result.tuned.params)
+            .map(([k, v]) => `${k}=${v === null ? "none" : v}`)
+            .join(", ");
+        notes.push(`tuned: ${params}`);
+    }
+    if (notes.length === 0) return null;
+    return <p className="mt-3 text-xs text-muted">{notes.join(" · ")}</p>;
+}
+
+function PerClassTable({ rows }) {
+    if (!rows?.length) return null;
+    return (
+        <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+            <table className="w-full text-left text-xs">
+                <thead>
+                    <tr className="border-b border-line text-muted">
+                        <th className="px-3 py-2 font-medium">Class</th>
+                        <th className="px-3 py-2 font-medium">Precision</th>
+                        <th className="px-3 py-2 font-medium">Recall</th>
+                        <th className="px-3 py-2 font-medium">F1</th>
+                        <th className="px-3 py-2 font-medium">Rows</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((r) => (
+                        <tr key={r.label} className="border-b border-line/60 last:border-0">
+                            <td className="px-3 py-2 text-ink/90">{r.label}</td>
+                            <td className="tnum px-3 py-2 text-muted">{r.precision.toFixed(1)}%</td>
+                            <td className={`tnum px-3 py-2 ${r.recall < 70 ? "font-semibold text-bad" : "text-muted"}`}>
+                                {r.recall.toFixed(1)}%
+                            </td>
+                            <td className="tnum px-3 py-2 text-muted">{r.f1.toFixed(1)}%</td>
+                            <td className="tnum px-3 py-2 text-muted">{r.support}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 function Bar({ label, value, max, color, suffix = "%" }) {
     const safe = typeof value === "number" && Number.isFinite(value) ? value : 0;
     const ceiling = typeof max === "number" && max > 0 ? max : Math.max(safe, 1);
@@ -103,6 +157,8 @@ function ClassificationResult({ result, headline, baseline }) {
                 </Panel>
             </div>
 
+            <RunNotes result={result} />
+
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <StatBlock label="Training time" value={`${result.fit_ms} ms`} />
                 <StatBlock label="Test rows" value={result.test_rows} />
@@ -112,6 +168,8 @@ function ClassificationResult({ result, headline, baseline }) {
                     sub={result.test_rows < 50 ? "Few test rows — treat this score as rough." : undefined}
                 />
             </div>
+
+            <PerClassTable rows={result.per_class} />
 
             <ConfusionMatrix matrix={result.confusion_matrix} classNames={result.class_names} />
         </>
@@ -162,6 +220,8 @@ function RegressionResult({ result, headline }) {
                     <Verdict tone={v.tone} title={v.title} text={v.text} />
                 </Panel>
             </div>
+
+            <RunNotes result={result} />
 
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <StatBlock label="Training time" value={`${result.fit_ms} ms`} />
