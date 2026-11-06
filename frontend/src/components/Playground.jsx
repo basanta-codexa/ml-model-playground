@@ -1,17 +1,15 @@
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import Dropzone from "./Dropzone";
 import SampleDatasets from "./SampleDatasets";
 import DatasetPreview from "./DatasetPreview";
 import DataProfile from "./DataProfile";
 import Preprocessing from "./Preprocessing";
-import { uploadCsv, loadSample } from "../api";
-
 import Training from "./Training";
+import { uploadCsv, loadSample } from "../api";
 
 export default function Playground() {
     const [dataset, setDataset] = useState(null);
-    const [prepared, setPrepared] = useState(null); // used by training in Step 6
+    const [prepared, setPrepared] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
@@ -29,40 +27,26 @@ export default function Playground() {
     }
 
     return (
-        <section id="playground" className="mx-auto max-w-5xl scroll-mt-24 px-6 py-24">
-            <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6 }}
-                className="mb-10 text-center"
-            >
-                <h2 className="font-display text-4xl font-bold">
-                    Start with your <span className="text-gradient">data</span>
-                </h2>
-                <p className="mt-3 text-slate-400">Upload a CSV, or pick a sample to explore.</p>
-            </motion.div>
+        <section id="playground" className="mx-auto max-w-4xl scroll-mt-20 px-6 py-14">
+            <div className="mb-6 border-b border-line pb-6">
+                <h2 className="text-2xl font-bold tracking-tight text-ink">Try it</h2>
+                <p className="mt-1 text-sm text-muted">
+                    Upload a CSV, or start from one of the samples — every sample is a real file with real mess.
+                </p>
+            </div>
 
             <Dropzone onFile={(file) => run(() => uploadCsv(file))} loading={loading} />
 
             {error && (
-                <motion.p
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-center text-sm text-rose-200"
-                >
+                <p className="mt-3 rounded-lg border border-bad/30 bg-bad-soft px-4 py-3 text-sm text-bad">
                     {error}
-                </motion.p>
+                </p>
             )}
 
             <SampleDatasets onPick={(id) => run(() => loadSample(id))} disabled={loading} />
 
-            <AnimatePresence mode="wait">
-                {dataset && <DatasetPreview key={dataset.dataset_id} dataset={dataset} />}
-            </AnimatePresence>
-
+            {dataset && <DatasetPreview key={dataset.dataset_id} dataset={dataset} />}
             {dataset && <DataProfile key={`profile-${dataset.dataset_id}`} dataset={dataset} />}
-
             {dataset && (
                 <Preprocessing
                     key={`prep-${dataset.dataset_id}`}

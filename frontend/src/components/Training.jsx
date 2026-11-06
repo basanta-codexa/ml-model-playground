@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { getModels, trainModel } from "../api";
 import ModelPicker from "./ModelPicker";
 import TrainingScreen from "./TrainingScreen";
@@ -17,7 +16,6 @@ export default function Training({ dataset, prepared }) {
     const [ready, setReady] = useState(false);
     const [error, setError] = useState("");
 
-    // Lets us skip updates if the user switched datasets while we were waiting
     const alive = useRef(true);
     useEffect(() => {
         alive.current = true;
@@ -49,10 +47,10 @@ export default function Training({ dataset, prepared }) {
         setError("");
         try {
             // Wait for BOTH the real answer and a minimum animation time
-            const [res] = await Promise.all([trainModel(dataset.dataset_id, selected), sleep(2400)]);
+            const [res] = await Promise.all([trainModel(dataset.dataset_id, selected), sleep(1400)]);
             if (!alive.current) return;
             setReady(true);
-            await sleep(900); // let the final checkmark play
+            await sleep(400);
             if (!alive.current) return;
             setResults((r) => ({ ...r, [res.model_id]: res }));
         } catch (e) {
@@ -66,23 +64,21 @@ export default function Training({ dataset, prepared }) {
     }
 
     const heading = (
-        <>
-            <h3 className="font-display text-2xl font-bold">
-                Train a <span className="text-gradient">model</span>
-            </h3>
-            <p className="mt-1 text-sm text-slate-400">
+        <div className="mt-12 border-b border-line pb-3">
+            <h2 className="text-2xl font-bold tracking-tight text-ink">Train a model</h2>
+            <p className="mt-1 text-sm text-muted">
                 {task === "regression"
                     ? "Each algorithm predicts a number in its own way. Pick one, train it, and see how close its guesses are."
-                    : "Each algorithm \"thinks\" differently. Pick one, train it, and see how it does on rows it has never seen."}
+                    : "Each algorithm learns differently. Pick one, train it, and see how it does on rows it has never seen."}
             </p>
-        </>
+        </div>
     );
 
     if (!prepared) {
         return (
-            <section className="mt-24">
+            <section className="mt-4">
                 {heading}
-                <div className="mt-6 rounded-2xl border border-dashed border-white/15 px-6 py-10 text-center text-slate-400">
+                <div className="mt-4 rounded-xl border border-dashed border-line bg-surface px-6 py-8 text-center text-sm text-muted">
                     Prepare your data above to unlock training.
                 </div>
             </section>
@@ -93,38 +89,31 @@ export default function Training({ dataset, prepared }) {
     const trainedIds = Object.keys(results);
 
     return (
-        <section className="mt-24">
+        <section className="mt-4">
             {heading}
 
-            <div className="mt-6">
+            <div className="mt-4">
                 <ModelPicker models={models} selected={selected} onSelect={setSelected} trainedIds={trainedIds} />
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center gap-4">
-                <motion.button
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+                <button
                     type="button"
                     onClick={train}
                     disabled={phase === "training" || !current}
-                    whileHover={{ scale: 1.04 }}
-                    whileTap={{ scale: 0.96 }}
-                    className="rounded-xl bg-linear-to-r from-neon-violet to-neon-cyan px-6 py-3 font-semibold text-white shadow-lg shadow-neon-violet/30 disabled:opacity-60"
+                    className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
                 >
-                    {phase === "training" ? "Training..." : `Train ${current?.label ?? "model"}`}
-                </motion.button>
+                    {phase === "training" ? "Training…" : `Train ${current?.label ?? "model"}`}
+                </button>
             </div>
 
             {error && (
-                <p className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                <p className="mt-3 rounded-lg border border-bad/30 bg-bad-soft px-4 py-3 text-sm text-bad">
                     {error}
                 </p>
             )}
 
-            <AnimatePresence mode="wait">
-                {phase === "training" && (
-                    <TrainingScreen key="training" modelLabel={current?.label} ready={ready} />
-                )}
-            </AnimatePresence>
-
+            {phase === "training" && <TrainingScreen modelLabel={current?.label} ready={ready} />}
             {phase === "idle" && results[selected] && <TrainResult key={selected} result={results[selected]} />}
 
             {trainedIds.length > 0 && <Scoreboard results={Object.values(results)} />}

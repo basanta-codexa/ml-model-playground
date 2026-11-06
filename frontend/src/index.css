@@ -1,14 +1,23 @@
 @import "tailwindcss";
 
-/* Design tokens: Tailwind turns these into classes like
-   bg-ink, text-neon-cyan, font-display, from-neon-violet ... */
+/* Minimal pro tool: one accent, flat surfaces, no effects.
+   Tailwind turns these tokens into classes like bg-surface, text-ink, border-line. */
 @theme {
-    --font-sans: "Inter", system-ui, sans-serif;
-    --font-display: "Space Grotesk", "Inter", sans-serif;
-    --color-ink: #07070f;
-    --color-neon-violet: #8b5cf6;
-    --color-neon-cyan: #22d3ee;
-    --color-neon-pink: #f472b6;
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+
+    --color-canvas: #f6f6f5;
+    --color-surface: #ffffff;
+    --color-line: #e4e4e0;
+    --color-ink: #18181b;
+    --color-muted: #5b5b63;
+    --color-accent: #2563eb;
+    --color-accent-soft: #eef3ff;
+    --color-ok: #15803d;
+    --color-ok-soft: #f0f9f2;
+    --color-warn: #b45309;
+    --color-warn-soft: #fdf6ec;
+    --color-bad: #b91c1c;
+    --color-bad-soft: #fdf0ef;
 }
 
 html {
@@ -17,62 +26,19 @@ html {
 
 body {
     margin: 0;
-    background: var(--color-ink);
-    color: #e8e8f5;
+    background: var(--color-canvas);
+    color: var(--color-ink);
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
 }
 
-/* Glassmorphism: translucent fill + blur + hairline border */
-.glass {
-    background: rgba(255, 255, 255, 0.04);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+/* Numbers line up in tables and stat blocks */
+.tnum {
+    font-variant-numeric: tabular-nums;
 }
 
-/* Animated gradient text */
-.text-gradient {
-    background: linear-gradient(90deg, #8b5cf6, #22d3ee, #f472b6, #8b5cf6);
-    background-size: 200% auto;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: shimmer 6s linear infinite;
-}
-
-@keyframes shimmer {
-    to {
-        background-position: 200% center;
-    }
-}
-
-/* Faint grid that fades out toward the edges */
-.grid-bg {
-    background-image:
-        linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
-    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
-}
-
-/* Infinite scrolling marquee */
-@keyframes marquee {
-    to {
-        transform: translateX(-50%);
-    }
-}
-
-.marquee-track {
-    animation: marquee 30s linear infinite;
-}
-
-.marquee:hover .marquee-track {
-    animation-play-state: paused;
-}
-
-/* Fade the left and right edges to transparent */
-.fade-edges {
-    mask-image: linear-gradient(90deg, transparent, black 15%, black 85%, transparent);
-    -webkit-mask-image: linear-gradient(90deg, transparent, black 15%, black 85%, transparent);
+/* A single, honest focus ring for keyboard users */
+:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
 }

@@ -1,35 +1,20 @@
-import AnimatedBackground from "./components/AnimatedBackground";
-import NeuralBackground from "./components/NeuralBackground";
-import CursorGlow from "./components/CursorGlow";
-import ScrollProgress from "./components/ScrollProgress";
 import Navbar from "./components/Navbar";
-import Hero from "./components/Hero";
-import Marquee from "./components/Marquee";
-import Features from "./components/Features";
-import HowItWorks from "./components/HowItWorks";
+import Intro from "./components/Intro";
 import Playground from "./components/Playground";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 export default function App() {
     return (
-        <div className="relative min-h-screen">
-            <ScrollProgress />
-            <AnimatedBackground />
-            <NeuralBackground />
-            <CursorGlow />
+        <div className="min-h-screen">
             <Navbar />
             <main>
-                <Hero />
-                <Marquee />
-                {/* One broken panel should never take the whole page down. */}
+                <Intro />
                 <ErrorBoundary>
                     <Playground />
                 </ErrorBoundary>
-                <Features />
-                <HowItWorks />
             </main>
-            <footer className="border-t border-white/5 py-8 text-center text-sm text-slate-500">
-                Built step by step, one commit at a time.(Rome wasn't built in a day either.) <br />
+            <footer className="border-t border-line py-6 text-center text-xs text-muted">
+                Runs entirely on this machine. Your data is never uploaded anywhere.
             </footer>
         </div>
     );

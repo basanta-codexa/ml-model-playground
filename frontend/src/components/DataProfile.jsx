@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { getProfile } from "../api";
+import { Suspense, lazy, useEffect, useState } from "react";
 import Panel from "./Panel";
-import HealthRing from "./HealthRing";
 import MissingBars from "./MissingBars";
 import ClassBalance from "./ClassBalance";
-import ColumnExplorer from "./ColumnExplorer";
+import { getProfile } from "../api";
+
+// Recharts is the heaviest dependency in the bundle, so the chart loads on
+// demand instead of on first paint.
+const ColumnExplorer = lazy(() => import("./ColumnExplorer"));
 
 const levelStyle = {
-    warn: "border-amber-400/30 bg-amber-400/10 text-amber-200",
-    info: "border-neon-cyan/30 bg-neon-cyan/10 text-cyan-200",
+    warn: "border-warn bg-warn-soft text-warn",
+    info: "border-accent bg-accent-soft text-accent",
 };
 
 export default function DataProfile({ dataset }) {
@@ -17,7 +18,6 @@ export default function DataProfile({ dataset }) {
     const [error, setError] = useState("");
 
     useEffect(() => {
-        // "cancelled" guards against a slow, old response overwriting a newer one
         let cancelled = false;
         getProfile(dataset.dataset_id)
             .then((p) => !cancelled && setProfile(p))
@@ -29,7 +29,7 @@ export default function DataProfile({ dataset }) {
 
     if (error) {
         return (
-            <p className="mt-16 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-center text-sm text-rose-200">
+            <p className="mt-10 rounded-lg border border-bad/30 bg-bad-soft px-4 py-3 text-sm text-bad">
                 {error}
             </p>
         );
@@ -37,9 +37,9 @@ export default function DataProfile({ dataset }) {
 
     if (!profile) {
         return (
-            <div className="mt-20 grid gap-6 md:grid-cols-3">
+            <div className="mt-10 grid gap-4 md:grid-cols-3">
                 {[0, 1, 2].map((i) => (
-                    <div key={i} className="glass h-48 animate-pulse rounded-2xl" />
+                    <div key={i} className="h-40 animate-pulse rounded-xl border border-line bg-surface" />
                 ))}
             </div>
         );
@@ -48,67 +48,70 @@ export default function DataProfile({ dataset }) {
     const completePct = Math.round((profile.complete_rows / profile.rows) * 100);
 
     return (
-        <section className="mt-20">
-            <h3 className="font-display text-2xl font-bold">
-                Data <span className="text-gradient">profile</span>
-            </h3>
-            <p className="mt-1 text-sm text-slate-400">
-                What's in your data, and what might trip a model up.
-            </p>
+        <div className="mt-10">
+            <div className="border-b border-line pb-3">
+                <h2 className="text-2xl font-bold tracking-tight text-ink">What&rsquo;s in your data</h2>
+                <p className="mt-1 text-sm text-muted">Automatic checks before anything is modelled.</p>
+            </div>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-3">
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <Panel title="Data health" subtitle="Rows with no missing values." className="h-full">
-                    <div className="flex items-center gap-6">
-                        <HealthRing value={completePct} label="complete" />
-                        <dl className="space-y-3 text-sm">
-                            <div>
-                                <dt className="text-slate-400">Missing cells</dt>
-                                <dd className="font-display text-xl font-bold">
-                                    {profile.missing_cells}{" "}
-                                    <span className="text-sm font-normal text-slate-400">({profile.missing_pct}%)</span>
-                                </dd>
-                            </div>
-                            <div>
-                                <dt className="text-slate-400">Duplicate rows</dt>
-                                <dd className="font-display text-xl font-bold">{profile.duplicate_rows}</dd>
-                            </div>
-                        </dl>
+                    <div className="flex items-end justify-between">
+                        <span className="tnum text-5xl font-bold tracking-tight text-ink">{completePct}%</span>
+                        <span className="text-xs font-medium uppercase tracking-wider text-muted">complete</span>
                     </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-line" role="presentation">
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${completePct}%` }} />
+                    </div>
+                    <dl className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-baseline justify-between gap-3">
+                            <dt className="text-muted">Missing cells</dt>
+                            <dd className="tnum font-semibold text-ink">
+                                {profile.missing_cells} <span className="font-normal text-muted">({profile.missing_pct}%)</span>
+                            </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                            <dt className="text-muted">Duplicate rows</dt>
+                            <dd className="tnum font-semibold text-ink">{profile.duplicate_rows}</dd>
+                        </div>
+                    </dl>
                 </Panel>
 
-                <Panel title="Things to know" subtitle="Automatic checks on your data." className="h-full md:col-span-2">
+                <Panel
+                    title="Things to know"
+                    subtitle="What a careful analyst would flag."
+                    className="h-full md:col-span-2"
+                >
                     {profile.warnings.length === 0 ? (
-                        <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-4 text-sm text-emerald-200">
+                        <p className="rounded-lg border border-ok/30 bg-ok-soft px-4 py-4 text-sm text-ok">
                             No red flags found. This dataset looks clean.
                         </p>
                     ) : (
-                        <div className="space-y-3">
-                            {profile.warnings.map((w, i) => (
-                                <motion.div
+                        <ul className="space-y-2">
+                            {profile.warnings.map((w) => (
+                                <li
                                     key={w.title}
-                                    initial={{ opacity: 0, x: -16 }}
-                                    whileInView={{ opacity: 1, x: 0 }}
-                                    viewport={{ once: true }}
-                                    transition={{ delay: i * 0.08 }}
-                                    className={`rounded-xl border px-4 py-3 text-sm ${levelStyle[w.level]}`}
+                                    className={`rounded-lg border-l-4 px-4 py-3 text-sm ${levelStyle[w.level]}`}
                                 >
-                                    <div className="font-semibold">{w.title}</div>
-                                    <div className="mt-0.5 text-slate-300">{w.text}</div>
-                                </motion.div>
+                                    <span className="font-semibold">{w.title}. </span>
+                                    <span className="text-ink/80">{w.text}</span>
+                                </li>
                             ))}
-                        </div>
+                        </ul>
                     )}
                 </Panel>
             </div>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <MissingBars columns={profile.columns} />
                 <ClassBalance columns={profile.columns} defaultTarget={dataset.suggested_target} />
             </div>
 
-            <div className="mt-6">
-                <ColumnExplorer columns={profile.columns} />
+            <div className="mt-4">
+                <Suspense fallback={<div className="h-72 animate-pulse rounded-xl border border-line bg-surface" />}>
+                    <ColumnExplorer columns={profile.columns} />
+                </Suspense>
             </div>
-        </section>
+        </div>
     );
 }

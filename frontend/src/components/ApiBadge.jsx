@@ -1,31 +1,30 @@
 import { useEffect, useState } from "react";
 
-const styles = {
-    loading: { dot: "bg-amber-400", text: "text-amber-300", label: "Connecting" },
-    online: { dot: "bg-emerald-400", text: "text-emerald-300", label: "API online" },
-    offline: { dot: "bg-rose-400", text: "text-rose-300", label: "API offline" },
+const STYLES = {
+    loading: { dot: "bg-amber-400", label: "Connecting…" },
+    online: { dot: "bg-emerald-500", label: "API online" },
+    offline: { dot: "bg-red-500", label: "API offline" },
 };
 
 export default function ApiBadge() {
     const [status, setStatus] = useState("loading");
 
     useEffect(() => {
+        let cancelled = false;
         fetch("/api/health")
-            .then((res) => res.json())
-            .then(() => setStatus("online"))
-            .catch(() => setStatus("offline"));
+            .then((res) => (res.ok ? res.json() : Promise.reject(new Error("bad status"))))
+            .then(() => !cancelled && setStatus("online"))
+            .catch(() => !cancelled && setStatus("offline"));
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const s = styles[status];
+    const s = STYLES[status];
 
     return (
-        <div className={`glass flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${s.text}`}>
-            <span className="relative flex h-2 w-2">
-                {status === "online" && (
-                    <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${s.dot}`} />
-                )}
-                <span className={`relative inline-flex h-2 w-2 rounded-full ${s.dot}`} />
-            </span>
+        <div className="flex items-center gap-2 text-xs font-medium text-muted">
+            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${s.dot}`} />
             {s.label}
         </div>
     );

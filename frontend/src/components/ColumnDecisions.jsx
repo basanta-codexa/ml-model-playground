@@ -1,16 +1,14 @@
-import { motion } from "framer-motion";
 import Panel from "./Panel";
 
 const kindStyle = {
-    numeric: "border-neon-cyan/40 text-neon-cyan",
-    categorical: "border-neon-pink/40 text-neon-pink",
-    empty: "border-white/10 text-slate-500",
+    numeric: "border-accent/30 bg-accent-soft text-accent",
+    categorical: "border-line bg-canvas text-muted",
+    empty: "border-line bg-canvas text-muted",
 };
 
 /**
  * Shows what the parser decided about every column, so nothing happens
- * behind the user's back. "Max Power" was text; now it is a number in kW,
- * and this is where you find out why.
+ * behind the user's back.
  */
 export default function ColumnDecisions({ columns, leaked = [] }) {
     if (!columns || columns.length === 0) return null;
@@ -23,33 +21,30 @@ export default function ColumnDecisions({ columns, leaked = [] }) {
             subtitle="Every column, and what we did with it."
             className="mt-6"
         >
-            <div className="space-y-3">
-                {columns.map((col, i) => {
+            <div className="space-y-2">
+                {columns.map((col) => {
                     const leakedCol = leakedSet.has(col.name);
                     const notes = col.notes || [];
                     const variants = col.variants || [];
 
                     return (
-                        <motion.div
+                        <div
                             key={col.name}
-                            initial={{ opacity: 0, y: 10 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ delay: Math.min(i * 0.04, 0.4) }}
-                            className={`rounded-xl border px-4 py-3 ${leakedCol
-                                    ? "border-rose-400/30 bg-rose-500/5"
-                                    : "border-white/10 bg-white/[0.02]"
-                                }`}
+                            className={`rounded-lg border px-4 py-3 ${
+                                leakedCol
+                                    ? "border-bad/30 bg-bad-soft"
+                                    : "border-line bg-surface"
+                            }`}
                         >
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-semibold">{col.name}</span>
+                                <span className="font-semibold text-ink">{col.name}</span>
                                 <span
-                                    className={`rounded-full border px-2 py-0.5 text-[10px] ${kindStyle[col.kind] || ""}`}
+                                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${kindStyle[col.kind] || ""}`}
                                 >
                                     {col.kind === "numeric" ? "read as numbers" : "read as labels"}
                                 </span>
                                 {col.unit && (
-                                    <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-300">
+                                    <span className="rounded bg-canvas px-1.5 py-0.5 text-[10px] text-muted">
                                         unit: {col.unit}
                                         {col.base_unit && col.base_unit !== col.unit
                                             ? ` → ${col.base_unit}`
@@ -57,26 +52,26 @@ export default function ColumnDecisions({ columns, leaked = [] }) {
                                     </span>
                                 )}
                                 {col.mixed && (
-                                    <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-300">
+                                    <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
                                         mixed units → split
                                     </span>
                                 )}
                                 {leakedCol && (
-                                    <span className="rounded-full bg-rose-400/15 px-2 py-0.5 text-[10px] text-rose-300">
+                                    <span className="rounded bg-bad-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bad">
                                         leaks the target → dropped
                                     </span>
                                 )}
                             </div>
 
                             {col.kind === "numeric" && col.parse_ratio < 1 && (
-                                <p className="mt-1.5 text-xs text-slate-400">
+                                <p className="mt-1.5 text-xs text-muted">
                                     {Math.round(col.parse_ratio * 100)}% of the values were read as
                                     numbers, with the units and symbols taken off.
                                 </p>
                             )}
 
                             {variants.length > 0 && (
-                                <p className="mt-1.5 text-xs text-slate-400">
+                                <p className="mt-1.5 text-xs text-muted">
                                     Folded together:{" "}
                                     {variants
                                         .slice(0, 3)
@@ -88,12 +83,12 @@ export default function ColumnDecisions({ columns, leaked = [] }) {
                             )}
 
                             {notes.map((note) => (
-                                <p key={note.title} className="mt-1.5 text-xs text-slate-400">
-                                    <span className="text-amber-300">{note.title}:</span>{" "}
+                                <p key={note.title} className="mt-1.5 text-xs leading-relaxed text-muted">
+                                    <span className="font-semibold text-warn">{note.title}:</span>{" "}
                                     {note.text}
                                 </p>
                             ))}
-                        </motion.div>
+                        </div>
                     );
                 })}
             </div>

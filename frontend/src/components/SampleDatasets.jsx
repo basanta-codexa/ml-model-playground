@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { Database } from "lucide-react";
+import { FileText } from "lucide-react";
 import { getSamples } from "../api";
 
 export default function SampleDatasets({ onPick, disabled }) {
@@ -9,30 +8,31 @@ export default function SampleDatasets({ onPick, disabled }) {
     useEffect(() => {
         getSamples()
             .then(setSamples)
-            .catch(() => setSamples([])); // if the backend is down, just show nothing
+            .catch(() => setSamples([]));
     }, []);
 
     if (samples.length === 0) return null;
 
     return (
-        <div className="mt-8">
-            <p className="mb-4 text-center text-sm text-slate-400">
-                No data handy? Try a sample dataset:
+        <div className="mt-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Or try a sample
             </p>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {samples.map((s) => (
-                    <motion.button
+                    <button
                         key={s.id}
+                        type="button"
                         disabled={disabled}
                         onClick={() => onPick(s.id)}
-                        whileHover={{ y: -4 }}
-                        whileTap={{ scale: 0.97 }}
-                        className="glass rounded-2xl p-5 text-left transition-shadow hover:shadow-[0_0_30px_-8px] hover:shadow-neon-violet/60 disabled:opacity-50"
+                        className="group flex items-start gap-3 rounded-lg border border-line bg-surface p-3 text-left transition-colors hover:border-accent disabled:opacity-60"
                     >
-                        <Database size={20} className="mb-3 text-neon-cyan" />
-                        <div className="font-display font-bold">{s.label}</div>
-                        <div className="mt-1 text-xs text-slate-400">{s.description}</div>
-                    </motion.button>
+                        <FileText aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-muted group-hover:text-accent" />
+                        <span>
+                            <span className="block text-sm font-semibold text-ink">{s.label}</span>
+                            <span className="mt-0.5 block text-xs leading-snug text-muted">{s.description}</span>
+                        </span>
+                    </button>
                 ))}
             </div>
         </div>

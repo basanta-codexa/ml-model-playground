@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { Upload } from "lucide-react";
 
 const MAX_MB = 10;
@@ -11,8 +10,7 @@ export default function Dropzone({ onFile, loading }) {
 
     function handleFile(file) {
         if (!file) return;
-        // Quick checks in the browser so the user gets instant feedback.
-        // The server still re-checks everything, because the browser can't be trusted.
+        // The server re-checks everything; these are just for fast feedback.
         if (!file.name.toLowerCase().endsWith(".csv")) {
             setError("Please choose a .csv file.");
             return;
@@ -26,14 +24,15 @@ export default function Dropzone({ onFile, loading }) {
     }
 
     function onDrop(e) {
-        e.preventDefault(); // otherwise the browser opens the file instead
+        e.preventDefault();
         setDragging(false);
         if (!loading) handleFile(e.dataTransfer.files[0]);
     }
 
     return (
         <div>
-            <motion.div
+            <button
+                type="button"
                 onClick={() => !loading && inputRef.current.click()}
                 onDragOver={(e) => {
                     e.preventDefault();
@@ -41,12 +40,11 @@ export default function Dropzone({ onFile, loading }) {
                 }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={onDrop}
-                animate={{ scale: dragging ? 1.03 : 1 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className={`relative cursor-pointer overflow-hidden rounded-3xl border-2 border-dashed p-10 text-center transition-colors ${dragging
-                        ? "border-neon-cyan bg-neon-cyan/10"
-                        : "border-white/15 bg-white/[0.03] hover:border-neon-violet/60"
-                    }`}
+                className={`flex w-full cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
+                    dragging
+                        ? "border-accent bg-accent-soft"
+                        : "border-line bg-surface hover:border-zinc-300"
+                }`}
             >
                 <input
                     ref={inputRef}
@@ -58,43 +56,28 @@ export default function Dropzone({ onFile, loading }) {
                         e.target.value = ""; // lets you pick the same file twice in a row
                     }}
                 />
-
-                {/* pointer-events-none stops child elements from triggering dragleave flicker */}
-                <div className="pointer-events-none flex flex-col items-center gap-4">
-                    <div className="relative grid h-16 w-16 place-items-center">
-                        <motion.span
-                            className="absolute inset-0 rounded-full border border-neon-violet"
-                            animate={{ scale: [1, 1.7], opacity: [0.6, 0] }}
-                            transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+                <span aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-lg bg-accent-soft text-accent">
+                    <Upload size={20} />
+                </span>
+                {loading ? (
+                    <span className="flex items-center gap-2 text-sm text-muted">
+                        <span
+                            aria-hidden="true"
+                            className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-accent"
                         />
-                        <motion.div
-                            animate={{ y: dragging ? -8 : [0, -5, 0] }}
-                            transition={dragging ? { duration: 0.2 } : { duration: 2.4, repeat: Infinity }}
-                            className="grid h-16 w-16 place-items-center rounded-2xl bg-linear-to-br from-neon-violet to-neon-cyan"
-                        >
-                            <Upload size={28} />
-                        </motion.div>
-                    </div>
+                        Reading your data…
+                    </span>
+                ) : (
+                    <span>
+                        <span className="block text-base font-semibold text-ink">
+                            Drop a CSV here, or click to browse
+                        </span>
+                        <span className="mt-1 block text-sm text-muted">Up to {MAX_MB} MB</span>
+                    </span>
+                )}
+            </button>
 
-                    {loading ? (
-                        <div className="flex items-center gap-3 text-slate-300">
-                            <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-neon-cyan" />
-                            Reading your data...
-                        </div>
-                    ) : (
-                        <>
-                            <p className="font-display text-xl font-bold">
-                                {dragging ? "Drop it!" : "Drag and drop your CSV here"}
-                            </p>
-                            <p className="text-sm text-slate-400">
-                                or <span className="text-neon-cyan">click to browse</span> · up to {MAX_MB} MB
-                            </p>
-                        </>
-                    )}
-                </div>
-            </motion.div>
-
-            {error && <p className="mt-3 text-center text-sm text-rose-300">{error}</p>}
+            {error && <p className="mt-2 text-center text-sm text-bad">{error}</p>}
         </div>
     );
 }
