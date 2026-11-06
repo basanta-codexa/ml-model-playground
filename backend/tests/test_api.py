@@ -1,25 +1,25 @@
-"""Tests for the HTTP layer, so the API contract stays honest."""
+﻿"""Tests for the HTTP layer, so the API contract stays honest."""
 
 import io
 
 import pytest
 from fastapi.testclient import TestClient
 
-from fixtures import build_car_dataset
+from fixtures import build_sales_dataset
 from main import app
 
 client = TestClient(app)
 
 
-def upload_cars():
-    """Send the messy car file through the upload endpoint, as a user would."""
-    frame = build_car_dataset()
+def upload_messy():
+    """Send the messy retail export through the upload endpoint, as a user would."""
+    frame = build_sales_dataset()
     buffer = io.StringIO()
     frame.to_csv(buffer, index=False)
     raw = buffer.getvalue().encode("utf-8")
     response = client.post(
         "/api/upload",
-        files={"file": ("cars.csv", raw, "text/csv")},
+        files={"file": ("orders.csv", raw, "text/csv")},
     )
     assert response.status_code == 200
     return response.json()
@@ -36,34 +36,36 @@ def test_samples_are_listed():
     assert response.status_code == 200
     ids = [s["id"] for s in response.json()]
     assert "iris" in ids
-    assert "car_market" in ids
+    assert "retail_orders" in ids
 
 
 def test_the_messy_sample_can_be_loaded():
-    response = client.post("/api/samples/car_market")
+    response = client.post("/api/samples/retail_orders")
     assert response.status_code == 200
     body = response.json()
     assert body["rows"] == 420
-    # The price column is offered as a regression target.
-    assert body["suggested_target"] == "Price"
+    # The channel column is offered as a classification target.
+    assert body["suggested_target"] == "Channel"
 
 
 def test_uploading_a_file_returns_a_summary_with_target_suggestions():
-    body = upload_cars()
+    body = upload_messy()
     assert body["rows"] == 420
     names = {s["name"] for s in body["target_suggestions"]}
-    assert "Price" in names
-    assert "Fuel Types" in names
+    assert "Order Value" in names
+    assert "Channel" in names
 
     # The summary tells the user that a text column is really a number.
     columns = {c["name"]: c for c in body["columns"]}
-    assert columns["Max Power"]["kind"] == "numeric"
-    assert columns["Max Power"]["raw_kind"] == "categorical"
-    assert columns["Max Power"]["unit"] == "hp"
+    assert columns["Order Value"]["kind"] == "numeric"
+    assert columns["Order Value"]["raw_kind"] == "categorical"
+    assert columns["Rating"]["kind"] == "numeric"
+    assert columns["Net Contents"]["unit"] == "ml"
+    assert columns["Net Contents"]["mixed_units"] is True
 
 
 def test_the_profile_reports_the_messy_parts():
-    body = upload_cars()
+    body = upload_messy()
     response = client.get(f"/api/datasets/{body['dataset_id']}/profile")
     assert response.status_code == 200
     profile = response.json()
@@ -75,10 +77,10 @@ def test_the_profile_reports_the_messy_parts():
 
 
 def test_preprocessing_a_regression_target():
-    body = upload_cars()
+    body = upload_messy()
     response = client.post(
         f"/api/datasets/{body['dataset_id']}/preprocess",
-        json={"target": "Price"},
+        json={"target": "Order Value"},
     )
     assert response.status_code == 200
     summary = response.json()
@@ -87,9 +89,9 @@ def test_preprocessing_a_regression_target():
 
 
 def test_training_a_regression_model():
-    body = upload_cars()
+    body = upload_messy()
     client.post(f"/api/datasets/{body['dataset_id']}/preprocess",
-                json={"target": "Price"})
+                json={"target": "Order Value"})
     response = client.post(
         f"/api/datasets/{body['dataset_id']}/train",
         json={"model_id": "random_forest_regressor"},
@@ -103,9 +105,9 @@ def test_training_a_regression_model():
 
 
 def test_a_classifier_cannot_be_used_for_a_regression_target():
-    body = upload_cars()
+    body = upload_messy()
     client.post(f"/api/datasets/{body['dataset_id']}/preprocess",
-                json={"target": "Price"})
+                json={"target": "Order Value"})
     response = client.post(
         f"/api/datasets/{body['dataset_id']}/train",
         json={"model_id": "random_forest"},
@@ -124,7 +126,7 @@ def test_the_model_catalogue_can_be_filtered_by_task():
 
 
 def test_training_before_preparing_is_refused():
-    body = upload_cars()
+    body = upload_messy()
     response = client.post(
         f"/api/datasets/{body['dataset_id']}/train",
         json={"model_id": "random_forest"},
@@ -146,6 +148,42 @@ def test_a_non_csv_upload_is_refused():
         files={"file": ("notes.txt", b"hello", "text/plain")},
     )
     assert response.status_code == 400
+
+
+def test_columns_that_collide_after_trimming_are_refused():
+    # "Price " and "Price" are the same name once we strip, and two columns
+    # with one name would crash every downstream step.
+    rows = "\n".join(f"{i},{i + 1}" for i in range(20))
+    raw = f"Price ,Price\n{rows}\n".encode()
+    response = client.post(
+        "/api/upload",
+        files={"file": ("dup.csv", raw, "text/csv")},
+    )
+    assert response.status_code == 400
+    assert "same name" in response.json()["detail"]
+
+
+def test_a_windows_1252_file_is_read_and_flagged():
+    # 0xe9 is "Ã©" in Windows-1252, which is not valid UTF-8. It must not
+    # become silent mojibake.
+    body = b"name,other\n" + b"".join(
+        f"caf\xe9 {i},{i}\n".encode("latin-1") for i in range(15)
+    )
+    response = client.post(
+        "/api/upload",
+        files={"file": ("legacy.csv", body, "text/csv")},
+    )
+    assert response.status_code == 200
+    assert "Windows-1252" in response.json().get("encoding_note", "")
+
+
+def test_utf8_bom_files_still_read():
+    rows = "\n".join(f"name,n\nrow{i},{i}" for i in range(15))
+    response = client.post(
+        "/api/upload",
+        files={"file": ("bom.csv", ("\ufeff" + rows).encode("utf-8"), "text/csv")},
+    )
+    assert response.status_code == 200
 
 
 def test_the_iris_sample_still_trains():
@@ -226,9 +264,9 @@ def test_the_showcase_holds_real_numbers():
 
 
 def test_a_regression_model_is_cross_validated_too():
-    body = client.post("/api/samples/car_market").json()
+    body = client.post("/api/samples/retail_orders").json()
     client.post(f"/api/datasets/{body['dataset_id']}/preprocess",
-                json={"target": "Price"})
+                json={"target": "Order Value"})
     result = client.post(
         f"/api/datasets/{body['dataset_id']}/train",
         json={"model_id": "random_forest_regressor"},

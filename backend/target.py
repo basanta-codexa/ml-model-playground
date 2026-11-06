@@ -10,6 +10,8 @@ the data actually is:
   * A column that is different on every row is an id, not a target.
 """
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -30,8 +32,10 @@ MAX_CLASSES = 50
 
 
 def _name_hint(name: str) -> bool:
-    lowered = name.lower()
-    return any(word in lowered for word in TARGET_WORDS)
+    # Whole words only: "price" scores, but a stray "y" inside "delivery"
+    # must not.
+    words = set(re.findall(r"[a-z0-9]+", name.lower()))
+    return not words.isdisjoint(TARGET_WORDS)
 
 
 def _looks_like_index(series) -> bool:

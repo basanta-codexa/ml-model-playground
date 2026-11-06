@@ -264,3 +264,15 @@ def test_a_text_price_is_read_as_a_number(cars):
     prepared, _ = prepare(cars, PreprocessConfig(target="Price"))
     # "$1,100,000" became 1100000, not a string.
     assert prepared.y_train.max() > 1000000
+
+
+# --- spelling variants ---------------------------------------------------------
+
+def test_merged_spellings_keep_the_readable_case():
+    from infer import clean_categorical
+
+    folded = clean_categorical(pd.Series(["TOYOTA", "Toyota", "toyota"]), None)
+    assert list(folded) == ["Toyota", "Toyota", "Toyota"]
+    # Order of appearance must not flip the winner either.
+    folded = clean_categorical(pd.Series(["toyota", "TOYOTA", "Toyota"]), None)
+    assert list(folded) == ["Toyota", "Toyota", "Toyota"]

@@ -1,25 +1,26 @@
-"""A deliberately messy used-car dataset, used as a demo and in tests.
+"""Synthetic-but-representative messy datasets, used as demos and in tests.
 
-This file exists because the easy datasets (iris, wine) hide the problems
-that make real CSV files hard. Everything in here is something you will
-meet in a spreadsheet someone exported:
+The easy datasets (iris, wine) hide the problems that make real CSV files
+hard. The exports below are the kind you will meet in the wild:
 
-  * Numbers written with units: "963 hp", "2.5 sec", "20.5 km/l".
+  * Numbers written with units: "963 hp", "2.5 sec", "120 g".
   * Prices written as money: "$1,100,000".
-  * Ranges: "70-85 hp".
+  * Ranges: "3-5 days", "70-85 hp".
   * Two different measurements in one cell: "1,600 cc / 13.8 kwh".
   * Windows dashes: "2-6 seats" with an en dash, not a hyphen.
-  * The same company spelled three ways: TOYOTA, Toyota, toyota.
-  * A column that leaks the target: "Engine" says Diesel or Petrol, which is
-    exactly what "Fuel Types" says.
-  * Thousands of one-off values: 1,201 car names, 535 prices.
+  * The same label spelled three ways: TOYOTA, Toyota, toyota.
+  * A column that leaks the target: a derived copy of the label, spelled
+    differently.
+  * Hundreds of one-off names.
 
-The data is generated from a fixed seed, so it is the same every time and
-tests can rely on it.
+`build_sales_dataset` is the flagship demo: a retail sales export.
+`build_car_dataset` is kept for the test suite and is not exposed as a
+sample in the app. The data is generated from fixed seeds.
 """
 
 import random
 
+import numpy as np
 import pandas as pd
 
 SEED = 20240607
@@ -175,4 +176,103 @@ def build_car_dataset(rows: int = 420) -> pd.DataFrame:
     # A handful of real gaps, and a few cells that say "no value" instead.
     frame.loc[rng.sample(range(len(frame)), 12), "Mileage"] = "N/A"
     frame.loc[rng.sample(range(len(frame)), 7), "Max Torque"] = "-"
+    return frame
+
+
+# --- the flagship demo: a messy retail sales export ---------------------------
+
+SALES_SEED = 20240611
+
+RETAILERS = [
+    "Northgate", "Bluepine", "Harrow & Co", "Kestrel Mart", "Alderlane",
+    "Copperfield", "Marlow Stores", "Eastvale", "Redbrook", "Anchor & Co",
+    "Linden Park", "Bramble Hill", "Fenton Row", "Silver Birch", "Ochre Lane",
+]
+
+PRODUCTS = {
+    "Northgate": ["Kettle V2", "Press H", "Grinder Pro", "Filter Kit", "Scale S"],
+    "Bluepine": ["French Press", "Dripper", "Carafe", "Filters", "Kettle"],
+    "Harrow & Co": ["Toaster", "Blender X1", "Juicer", "Coffee Grinder", "Toastie Press"],
+    "Kestrel Mart": ["Notebook A5", "Gel Pens", "Desk Lamp", "Planner", "Folder Set"],
+    "Alderlane": ["Hiking Socks", "Trail Mix", "Water Bottle", "Headlamp", "Map Case"],
+    "Copperfield": ["Tea Tins", "Mugs", "Teapot", "Caddy", "Infuser"],
+    "Marlow Stores": ["Backpack Trail", "Rain Jacket", "Bottle Cage", "Cycling Cap", "Patch Kit"],
+    "Eastvale": ["Plant Pot", "Soil Bag", "Trowel", "Seed Pack", "Watering Can"],
+    "Redbrook": ["Puzzle 1000", "Board Game", "Card Deck", "Trivia Box", "Domino Set"],
+    "Anchor & Co": ["Anchor Soap", "Hand Cream", "Lip Balm", "Candle", "Bath Salts"],
+    "Linden Park": ["Picnic Basket", "Blanket", "Thermos", "Cutlery Set", "Cool Bag"],
+    "Bramble Hill": ["Jam Jar", "Honey Pot", "Bread Board", "Butter Dish", "Tea Towel"],
+    "Fenton Row": ["Kettlebell Heavy", "Yoga Mat", "Resistance Band", "Foam Roller", "Jump Rope"],
+    "Silver Birch": ["Notepad", "Pen Set", "Pen Stand", "Desk Organiser", "Sticky Notes"],
+    "Ochre Lane": ["Scarf", "Beanie", "Gloves", "Earmuffs", "Neck Warmer"],
+}
+
+# The sales channel is offered as a classification target; the segment code
+# below repeats it in caps, which is the leaking column.
+CHANNELS = ["In-store", "Online", "Partner"]
+# Spellings people actually type, mixed freely: the fold merges them into
+# one label, and "Segment Code" repeats the answer in caps.
+CHANNEL_SPELLINGS = {"In-store": ["In-store", "in-store", "IN-STORE"],
+                     "Online": ["Online", "online", "ONLINE"],
+                     "Partner": ["Partner", "partner", "PARTNER"]}
+SEGMENT_LEAK = {"In-store": ["IN-STORE", "in-store"],
+                "Online": ["ONLINE", "online"],
+                "Partner": ["PARTNER", "partner"]}
+
+
+def build_sales_dataset(rows: int = 420) -> pd.DataFrame:
+    """A messy retail sales export. The same every time, for the same seed."""
+    rng = random.Random(SALES_SEED)
+
+    records = []
+    for _ in range(rows):
+        retailer = rng.choice(RETAILERS)
+        product = rng.choice(PRODUCTS[retailer])
+        name = f"{retailer} {product}"
+        channel_base = rng.choice(CHANNELS)
+        channel = rng.choice(CHANNEL_SPELLINGS[channel_base])
+        segment_code = rng.choice(SEGMENT_LEAK[channel_base])
+
+        base = {"In-store": 620, "Online": 880, "Partner": 1400}[channel_base]
+        order_value = max(40, base + rng.gauss(0, 260))
+        order_value = round(order_value / 10) * 10
+
+        # Net contents: some rows carry a mass, some a volume, some both.
+        roll = rng.random()
+        if roll < 0.55:
+            contents = rng.choice(["750 ml", "500 ml", "330 ml", "1 l"])
+        elif roll < 0.78:
+            contents = rng.choice(["340 g", "250 g", "120 g", "1 kg", "500 g"])
+        else:
+            contents = rng.choice(["500 ml / 180 g", "750 ml / 310 g", "330 ml / 340 g"])
+
+        items = rng.randint(1, 48)
+        if rng.random() < 0.06:
+            rating = "N/A"
+        else:
+            rating = f"{round(rng.uniform(3.2, 5.0), 1)} stars"
+
+        discount = f"{rng.choice([0, 0, 5, 10, 15, 20, 25])}%"
+        delivery = f"{rng.randint(2, 9)}-{rng.randint(10, 21)} days"
+        region = rng.choice(["North", "NORTH", "north", "South", "SOUTH", "East", "EAST", "West", "WEST"])
+
+        records.append({
+            "Order Ref": name,
+            "Region": region,
+            "Channel": channel,
+            "Segment Code": segment_code,
+            "Items": items,
+            "Unit Price": f"${round(rng.uniform(3, 220), 2)}",
+            "Order Value": f"${order_value:,.0f}",
+            "Discount": discount,
+            "Delivery Window": delivery,
+            "Net Contents": contents,
+            "Rating": rating,
+        })
+
+    frame = pd.DataFrame.from_records(records)
+    # A few real gaps, and a few cells that say "no value" instead.
+    frame["Items"] = frame["Items"].astype("float64")
+    frame.loc[rng.sample(range(len(frame)), 8), "Items"] = np.nan
+    frame.loc[rng.sample(range(len(frame)), 6), "Discount"] = "-"
     return frame
