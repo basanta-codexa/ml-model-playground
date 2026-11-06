@@ -10,6 +10,7 @@ router = APIRouter(prefix="/api", tags=["training"])
 
 class TrainRequest(BaseModel):
     model_id: str
+    tune: bool = False
 
 
 @router.get("/models")
@@ -34,7 +35,7 @@ def train(dataset_id: str, request: TrainRequest):
                     f"{prepared.task}. Pick a different algorithm."))
 
     try:
-        bundle = train_model(request.model_id, prepared)
+        bundle = train_model(request.model_id, prepared, tune=request.tune)
     except ValueError as err:
         raise HTTPException(
             status_code=400,
