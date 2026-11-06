@@ -2,7 +2,8 @@
 
 The point of profiling is to answer "what is actually in this file?" before
 anyone tries to model it. For a clean file that is easy. For a messy one it
-is the whole job: "Max Power" holding "963 hp" is a measurement, not a set
+is the whole job: "Net Contents" holding "500 ml / 180 g" is a measurement,
+not a set
 of labels, and the histogram of its numbers says far more than a list of
 strings does.
 
@@ -165,7 +166,7 @@ def build_warnings(df: pd.DataFrame, columns: list[dict],
         out.append({
             "level": "info",
             "title": "Small dataset",
-            "text": f"Only {n} rows. Scores can swing a lot depending on which rows land in the test set. Cross-validation helps (Step 8).",
+            "text": f"Only {n} rows. Scores can swing a lot depending on which rows land in the test set. Cross-validation (in the prepare step) helps.",
         })
 
     if infos:

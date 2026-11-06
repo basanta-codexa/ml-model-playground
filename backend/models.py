@@ -55,7 +55,7 @@ MODELS = {
         "label": "Decision Tree",
         "tagline": "A flowchart of ifs and elses",
         "how_it_thinks": (
-            "Asks one question at a time: is the horsepower above 100? Split the rows "
+            "Asks one question at a time: is the order value above 1,000? Split the rows "
             "by the answer, then keep asking until each pile is pure."
         ),
         "strengths": ["Very easy to read", "Handles mixed column types"],
@@ -93,7 +93,7 @@ MODELS = {
         "tagline": "Averages the most similar rows",
         "how_it_thinks": (
             "Finds the 5 closest training rows and averages their answers. The idea "
-            "is that a car priced like the neighbours is worth a similar amount."
+            "is that a row looks a lot like its neighbours, so it should score like them."
         ),
         "strengths": ["Simple idea", "No training step"],
         "weaknesses": ["Slow on big data", "Needs scaled features"],
@@ -140,11 +140,6 @@ def list_models(task: str | None = None) -> list[dict]:
 
 def build_model(model_id: str, seed: int):
     return MODELS[model_id]["build"](seed)
-
-
-def models_for(task: str) -> list[dict]:
-    """The models that make sense for a classification or regression task."""
-    return list_models(task)
 
 
 def supports_task(model_id: str, task: str) -> bool:

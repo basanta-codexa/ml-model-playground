@@ -59,7 +59,7 @@ UNITS: dict[str, tuple[str, float]] = {
     "hour": ("time", 3600.0), "hours": ("time", 3600.0),
     # Voltage
     "v": ("voltage", 1.0), "volt": ("voltage", 1.0), "volts": ("voltage", 1.0),
-    # Rotational speed and a few other everyday car specs
+    # Rotational speed and a few other everyday specs
     "rpm": ("speed", 1.0),
     # Torque
     "nm": ("torque", 1.0), "n-m": ("torque", 1.0), "newton-metre": ("torque", 1.0),
@@ -122,31 +122,4 @@ def convert(value: float, unit: str | None, target: str | None = None) -> float:
     return value * factor
 
 
-def base_unit(dimension: str | None) -> str:
-    """The unit a dimension is stored in."""
-    return BASE_UNIT.get(dimension or "", "")
 
-
-def describe_conversion(units: list[str]) -> list[dict]:
-    """Explain how a set of units gets merged into one number column.
-
-    For "cc" and "L" it says both are volume and that L becomes cc. For "cc"
-    and "kWh" it says they measure different things, so the column has to be
-    split rather than converted.
-    """
-    by_dimension: dict[str, set[str]] = {}
-    for unit in units:
-        dimension = unit_dimension(unit)
-        if dimension:
-            by_dimension.setdefault(dimension, set()).add(unit.lower())
-
-    out = []
-    for dimension, members in by_dimension.items():
-        base = base_unit(dimension)
-        out.append({
-            "dimension": dimension,
-            "units": sorted(members),
-            "base_unit": base,
-            "convertible": len(members) == 1 or dimension != "currency",
-        })
-    return out
