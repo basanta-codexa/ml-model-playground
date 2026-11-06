@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline
 
 from models import build_model
 from preprocessing import PreprocessConfig, prepare
-from trainer import _fresh_pipeline, cross_validate_model, train_model
+from trainer import _cross_validate, _fresh_pipeline, train_model
 
 
 @pytest.fixture(scope="module")
@@ -79,8 +79,8 @@ def test_the_folds_are_refitted_properly(iris):
         cv=splitter, scoring="accuracy", error_score="raise")
 
     expected = float(np.mean(scores["test_score"]) * 100)
-    actual = cross_validate_model("random_forest", prepared)
-    assert actual["mean"] == pytest.approx(expected, abs=0.01)
+    actual = _cross_validate(prepared, lambda: build_model("random_forest", 42))
+    assert actual["accuracy"]["mean"] == pytest.approx(expected, abs=0.01)
 
 
 def test_the_score_agrees_with_the_holdout(iris):

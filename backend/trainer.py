@@ -24,14 +24,16 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
     mean_squared_error,
+    precision_recall_fscore_support,
     precision_score,
     r2_score,
     recall_score,
+    roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold, cross_validate
+from sklearn.model_selection import KFold, RandomizedSearchCV, StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 
-from models import MODELS, build_model
+from models import MODELS, build_model, tuning_grid
 from preprocessing import build_preprocessor
 
 
@@ -92,57 +94,99 @@ def _cv_result(values: np.ndarray, metric: str, n_splits: int) -> dict:
     }
 
 
-def cross_validate_model(model_id: str, prepared, baseline: bool = False) -> dict | None:
-    """Score a model over several folds of the training rows.
+def _splitter(prepared, n_splits: int):
+    if prepared.task == "classification":
+        return StratifiedKFold(n_splits=n_splits, shuffle=True,
+                               random_state=prepared.config.random_state)
+    return KFold(n_splits=n_splits, shuffle=True,
+                 random_state=prepared.config.random_state)
 
-    Returns None when there is not enough data to fold, so the caller can
-    fall back to the single split and say so.
+
+def _classification_weight(prepared) -> str | None:
+    """Return "balanced" when the target is at least 2:1 imbalanced.
+
+    Balancing the weights matters precisely when accuracy would look good
+    for the wrong reason; we only do it when the reader should care, and we
+    report it, never silently.
+    """
+    if prepared.task != "classification":
+        return None
+    counts = np.bincount(prepared.y_train)
+    nonzero = counts[counts > 0]
+    if nonzero.size < 2:
+        return None
+    return "balanced" if nonzero.max() / nonzero.min() >= 2.0 else None
+
+
+def _auc_scorer(n_classes: int):
+    """ROC AUC for binary (plain) and multiclass (one-vs-rest, macro)."""
+
+    def scorer(estimator, X, y):
+        proba = estimator.predict_proba(X)
+        if n_classes == 2:
+            return roc_auc_score(y, proba[:, 1])
+        return roc_auc_score(y, proba, multi_class="ovr", average="macro")
+
+    return scorer
+
+
+def _cross_validate(prepared, build) -> dict | None:
+    """Cross-validate a freshly built model inside every fold.
+
+    Returns {"accuracy", "auc"} for classifiers, {"r2"} for regressors.
+    Every fold rebuilds the preprocessor and the model from scratch.
     """
     n_splits = _usable_folds(prepared, prepared.config.cv_folds)
     if n_splits is None:
         return None
+    splitter = _splitter(prepared, n_splits)
 
-    if baseline:
-        model = (DummyClassifier(strategy="most_frequent")
-                 if prepared.task == "classification"
-                 else DummyRegressor(strategy="mean"))
-    else:
-        model = build_model(model_id, prepared.config.random_state)
-
-    metric = "accuracy" if prepared.task == "classification" else "r2"
     if prepared.task == "classification":
-        splitter = StratifiedKFold(n_splits=n_splits, shuffle=True,
-                                   random_state=prepared.config.random_state)
-    else:
-        splitter = KFold(n_splits=n_splits, shuffle=True,
-                         random_state=prepared.config.random_state)
+        scoring = {"accuracy": "accuracy",
+                   "auc": _auc_scorer(len(prepared.class_names))}
+        try:
+            raw = cross_validate(
+                _fresh_pipeline(prepared, build()),
+                prepared.X_train_raw,
+                prepared.y_train,
+                cv=splitter,
+                scoring=scoring,
+                error_score="raise",
+            )
+        except ValueError:
+            return None
+        return {
+            "accuracy": _cv_result(np.asarray(raw["test_accuracy"]), "accuracy", n_splits),
+            "auc": _cv_result(np.asarray(raw["test_auc"]), "auc", n_splits),
+        }
 
     try:
-        scores = cross_validate(
-            _fresh_pipeline(prepared, model),
+        raw = cross_validate(
+            _fresh_pipeline(prepared, build()),
             prepared.X_train_raw,
             prepared.y_train,
             cv=splitter,
-            scoring=metric,
+            scoring="r2",
             error_score="raise",
         )
     except ValueError:
         # A fold where the model cannot be fitted (one class missing, say).
         return None
+    return {"r2": _cv_result(np.asarray(raw["test_score"]), "r2", n_splits)}
 
-    return _cv_result(np.asarray(scores["test_score"]), metric, n_splits)
 
-
-def _baseline_cv(prepared) -> dict | None:
-    """The cross-validated baseline, worked out once and reused.
-
-    Every model is compared against the same "model that knows nothing", so
-    the number only has to be computed once.
-    """
+def _baseline_bundle(prepared) -> dict | None:
+    """The cross-validated baseline, worked out once and reused."""
     cached = getattr(prepared, "cv_baseline_cache", None)
     if cached is not None:
         return cached
-    result = cross_validate_model("", prepared, baseline=True)
+    if prepared.task == "classification":
+        def build():
+            return DummyClassifier(strategy="most_frequent")
+    else:
+        def build():
+            return DummyRegressor(strategy="mean")
+    result = _cross_validate(prepared, build)
     try:
         prepared.cv_baseline_cache = result
     except AttributeError:
@@ -269,8 +313,23 @@ def _regression_verdict(r2: float, mae: float, baseline_mae: float,
     }
 
 
+def _per_class(y_test, y_pred, class_names) -> list[dict]:
+    """Precision, recall and F1 for every class, with how many rows it has."""
+    precisions, recalls, f1s, supports = precision_recall_fscore_support(
+        y_test, y_pred, zero_division=0)
+    return [{
+        "label": class_names[i] if i < len(class_names) else str(i),
+        "precision": _pct(p),
+        "recall": _pct(r),
+        "f1": _pct(f),
+        "support": int(s),
+    } for i, (p, r, f, s) in enumerate(zip(precisions, recalls, f1s, supports, strict=True))]
+
+
 def _classification_result(model_id, model, prepared, fit_ms, y_pred,
-                            cv=None, cv_baseline=None) -> dict:
+                            cv=None, cv_baseline=None, cv_auc=None,
+                            cv_baseline_auc=None, class_weight=None,
+                            tuned_params=None) -> dict:
     y_train = prepared.y_train
     y_test = prepared.y_test
 
@@ -308,14 +367,19 @@ def _classification_result(model_id, model, prepared, fit_ms, y_pred,
         "points_per_row": round(100 / n_test, 1),
         "confusion_matrix": matrix,
         "class_names": prepared.class_names,
+        "per_class": _per_class(y_test, y_pred, prepared.class_names),
+        "class_weight": class_weight,
+        "tuned": {"params": tuned_params} if tuned_params else None,
         "cv": cv,
+        "cv_auc": cv_auc,
         "cv_baseline": cv_baseline,
+        "cv_baseline_auc": cv_baseline_auc,
         "verdict": _verdict(train_acc, test_acc, baseline_acc, cv, cv_baseline),
     }
 
 
 def _regression_result(model_id, model, prepared, fit_ms, y_pred,
-                       cv=None, cv_baseline=None) -> dict:
+                       cv=None, cv_baseline=None, tuned_params=None) -> dict:
     y_train = prepared.y_train
     y_test = prepared.y_test
 
@@ -346,6 +410,7 @@ def _regression_result(model_id, model, prepared, fit_ms, y_pred,
         "target_mean": round(float(np.mean(y_test)), 2),
         "cv": cv,
         "cv_baseline": cv_baseline,
+        "tuned": {"params": tuned_params} if tuned_params else None,
         "verdict": _regression_verdict(test_r2, mae, baseline_mae, cv, cv_baseline),
     }
 
@@ -370,27 +435,75 @@ def _add_leak_note(result: dict, prepared) -> dict:
     return result
 
 
-def train_model(model_id: str, prepared) -> dict:
-    model = build_model(model_id, prepared.config.random_state)
+def train_model(model_id: str, prepared, tune: bool = False) -> dict:
+    """Train one model and measure it honestly.
 
-    start = time.perf_counter()
-    model.fit(prepared.X_train, prepared.y_train)
-    fit_ms = (time.perf_counter() - start) * 1000
+    Balances class weights when the target is at least 2:1 imbalanced
+    (and says so), optionally runs a small randomized search over the
+    model's few meaningful knobs, and cross-validates the exact model the
+    user trains — same class weights, same tuned parameters — fold by fold.
+    """
+    seed = prepared.config.random_state
+    task = prepared.task
+    class_weight = _classification_weight(prepared)
+    tuned_params = None
+
+    folds = _usable_folds(prepared, 3) or 2
+
+    grid = tuning_grid(model_id) if tune else {}
+    if grid:
+        model = build_model(model_id, seed, class_weight)
+        search = RandomizedSearchCV(
+            model,
+            grid,
+            n_iter=min(12, int(np.prod([len(v) for v in grid.values()]))),
+            cv=_splitter(prepared, folds),
+            scoring="accuracy" if task == "classification" else "r2",
+            random_state=seed,
+            error_score="raise",
+        )
+        start = time.perf_counter()
+        search.fit(prepared.X_train, prepared.y_train)
+        fit_ms = (time.perf_counter() - start) * 1000
+        tuned_params = dict(search.best_params_)
+        model = search.best_estimator_
+    else:
+        model = build_model(model_id, seed, class_weight)
+        start = time.perf_counter()
+        model.fit(prepared.X_train, prepared.y_train)
+        fit_ms = (time.perf_counter() - start) * 1000
 
     y_pred = model.predict(prepared.X_test)
+
+    def model_factory():
+        fresh = build_model(model_id, seed, class_weight)
+        if tuned_params:
+            fresh.set_params(**tuned_params)
+        return fresh
 
     # Cross-validation on the training rows. This is the number we trust:
     # a single test split of a few dozen rows swings by several points
     # depending on which rows it happened to hold back.
-    cv = cross_validate_model(model_id, prepared)
-    cv_baseline = _baseline_cv(prepared) if cv else None
+    cv_bundle = _cross_validate(prepared, model_factory)
+    cv_baseline_bundle = _baseline_bundle(prepared) if cv_bundle else None
 
-    if prepared.task == "regression":
+    def pick(bundle, key):
+        return bundle[key] if bundle else None
+
+    if task == "regression":
         result = _regression_result(model_id, model, prepared, fit_ms, y_pred,
-                                    cv, cv_baseline)
+                                    cv=pick(cv_bundle, "r2"),
+                                    cv_baseline=pick(cv_baseline_bundle, "r2"),
+                                    tuned_params=tuned_params)
     else:
-        result = _classification_result(model_id, model, prepared, fit_ms, y_pred,
-                                        cv, cv_baseline)
+        result = _classification_result(
+            model_id, model, prepared, fit_ms, y_pred,
+            cv=pick(cv_bundle, "accuracy"),
+            cv_baseline=pick(cv_baseline_bundle, "accuracy"),
+            cv_auc=pick(cv_bundle, "auc"),
+            cv_baseline_auc=pick(cv_baseline_bundle, "auc"),
+            class_weight=class_weight,
+            tuned_params=tuned_params)
 
     result = _add_leak_note(result, prepared)
 
