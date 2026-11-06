@@ -66,6 +66,17 @@ Everything is rebuilt inside every fold, including the scaler and the
 encoders, so the folds cannot see each other. The tests check that, by
 running the cross-validation by hand and comparing the numbers.
 
+Every classifier is also scored on **AUC** (one-vs-rest, macro for
+multiclasses) alongside accuracy, because accuracy lies on an imbalanced
+target. And if your target really is lopsided — say it's 90% one class —
+the classes are weighted equally when training, and the result says so.
+The baseline stays unweighted; beating it is the same fight as ever.
+
+Every class also gets its own precision, recall, F1 and row count, so
+"92% accuracy" can never hide a class the model simply cannot see. And if
+you tick **Quick tune**, a small randomized search tries a handful of
+sensible settings, refits the winner, and tells you which one won.
+
 ## Tech stack
 
 | Layer    | Tools                                       |
@@ -118,7 +129,7 @@ whole pipeline from scratch.
 | `target.py` | Suggesting what to predict, and whether it is a label or a number |
 | `transformers.py` | The rare-category grouper, fitted inside the pipeline |
 | `preprocessing.py` | The pipeline: clean, split, then fit on the training rows only |
-| `trainer.py` | Training, cross-validation, and scoring against a baseline |
+| `trainer.py` | Training, class weighting, quick tune, cross-validation, per-class metrics, scoring against a baseline |
 | `models.py` | The algorithm registry |
 
 ## Roadmap
