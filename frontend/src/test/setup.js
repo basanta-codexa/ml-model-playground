@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom";
 
-// jsdom does not implement matchMedia, and framer-motion asks for it.
+// jsdom does not implement these browser observers. The app no longer
+// animates on scroll, but keep the shims so components that might use them
+// never crash the test suite.
 if (!window.matchMedia) {
     window.matchMedia = (query) => ({
         matches: false,
@@ -14,8 +16,6 @@ if (!window.matchMedia) {
     });
 }
 
-// Nor IntersectionObserver, which the "while in view" animations use to
-// decide when to start.
 if (!window.IntersectionObserver) {
     class FakeIntersectionObserver {
         constructor(callback) {
