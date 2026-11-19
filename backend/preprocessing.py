@@ -34,6 +34,7 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler, OneHotEncoder, Sta
 from infer import clean_frame, infer_column
 from leakage import detect_leakage
 from parsing import parse_column
+from predictor import build_raw_cleaner
 from target import MAX_CLASSES, detect_task
 from textnorm import canonical_key, clean_text, display_spellings
 from transformers import RareCategoryGrouper
@@ -104,6 +105,8 @@ class Prepared:
     X_test_raw: pd.DataFrame = None
     # The categorical columns whose rare values get rolled into a bucket.
     group_cols: list[str] = None
+    # Frozen cleaning rules for scoring new raw rows.
+    raw_cleaner: object = None
 
 
 def _label(value) -> str:
@@ -520,6 +523,7 @@ def prepare(df: pd.DataFrame, cfg: PreprocessConfig) -> tuple[Prepared, dict]:
         X_train_raw=X_train.copy(),
         X_test_raw=X_test.copy(),
         group_cols=group_cols,
+        raw_cleaner=build_raw_cleaner(data, infos, list(cleaned.columns)),
     )
     return prepared, summary
 

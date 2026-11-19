@@ -127,13 +127,13 @@ def get_prepared(dataset_id: str):
 
 
 def save_model(dataset_id: str, model_id: str, bundle: dict) -> tuple[int | None, bool]:
-    """Pickle the estimator and record the run. Returns (run_id, persisted)."""
+    """Pickle the predictor and record the run. Returns (run_id, persisted)."""
     _models.setdefault(dataset_id, {})[model_id] = bundle
     run_id = None
     persisted = False
     if _db():
         try:
-            model_bytes = _pickle(bundle.get("model"))
+            model_bytes = _pickle(bundle.get("predictor") or bundle.get("model"))
             result = dict(bundle["result"])
             # The pickle bytes never leave the server; keep the JSON clean.
             result.pop("_model", None)
@@ -172,13 +172,22 @@ def get_model(dataset_id: str, model_id: str) -> dict:
         payload = db.fetch_latest_model(dataset_id, model_id)
         if payload is not None:
             try:
-                model = pickle.loads(payload)
+                loaded = pickle.loads(payload)
             except Exception as err:
                 logger.error("stored model will not unpickle: %s", err)
                 raise HTTPException(
                     status_code=409,
                     detail="The stored model could not be loaded. Train it again.") from err
-            bundle = {"model": model, "result": None}
+            if isinstance(loaded, dict) and "pipeline" in loaded:
+                predictor = loaded
+                bundle = {
+                    "model": predictor["pipeline"].named_steps.get("model"),
+                    "predictor": predictor,
+                    "result": None,
+                }
+            else:
+                # Runs saved before predictors were stored still have a model.
+                bundle = {"model": loaded, "result": None}
             _models.setdefault(dataset_id, {})[model_id] = bundle
             return bundle
     raise HTTPException(

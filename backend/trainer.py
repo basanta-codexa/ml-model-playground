@@ -658,6 +658,25 @@ def train_model(model_id: str, prepared, tune: bool = False) -> dict:
 
     result = _add_leak_note(result, prepared)
 
-    # Keep the fitted model and its predictions: later steps build the
-    # confusion matrix from them and use them for the prediction demo.
-    return {"model": model, "y_pred": y_pred, "result": result}
+    # The model was fitted on the transformed matrix. To score new raw rows
+    # later, the fitted preprocessor has to travel with it. A pipeline of
+    # already-fitted steps transforms new rows through the same imputers,
+    # encoders and scalers the model was trained on.
+    predictor = {
+        "pipeline": Pipeline([
+            ("prep", prepared.preprocessor),
+            ("model", model),
+        ]),
+        "features": list(prepared.raw_features),
+        "class_names": list(prepared.class_names),
+        "task": task,
+        "cleaner": prepared.raw_cleaner,
+    }
+
+    # Keep the fitted model and its predictions for later steps.
+    return {
+        "model": model,
+        "y_pred": y_pred,
+        "result": result,
+        "predictor": predictor,
+    }

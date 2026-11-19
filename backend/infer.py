@@ -188,7 +188,8 @@ def infer_column(series: pd.Series) -> ColumnInfo:
     return info
 
 
-def clean_numeric(series: pd.Series, info: ColumnInfo) -> tuple[pd.Series, list[dict]]:
+def clean_numeric(series: pd.Series, info: ColumnInfo,
+                  extra_units=None) -> tuple[pd.Series, list[dict]]:
     """Turn a number column into one clean float series, in a common unit.
 
     When the column mixes dimensions we return one series per dimension, so
@@ -196,7 +197,7 @@ def clean_numeric(series: pd.Series, info: ColumnInfo) -> tuple[pd.Series, list[
     """
     values = series.tolist()
     cells, _ = parse_column(values)
-    extra = suggest_extra_units(cells)
+    extra = set(extra_units) if extra_units is not None else suggest_extra_units(cells)
     if extra:
         cells, _ = parse_column(values, extra)
 
