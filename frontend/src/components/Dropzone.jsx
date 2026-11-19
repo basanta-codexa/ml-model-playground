@@ -1,16 +1,13 @@
-import { useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { useState } from "react";
 
 const MAX_MB = 10;
 
 export default function Dropzone({ onFile, loading }) {
-    const inputRef = useRef(null);
     const [dragging, setDragging] = useState(false);
     const [error, setError] = useState("");
 
     function handleFile(file) {
         if (!file) return;
-        // The server re-checks everything; these are just for fast feedback.
         if (!file.name.toLowerCase().endsWith(".csv")) {
             setError("Please choose a .csv file.");
             return;
@@ -31,53 +28,35 @@ export default function Dropzone({ onFile, loading }) {
 
     return (
         <div>
-            <button
-                type="button"
-                onClick={() => !loading && inputRef.current.click()}
+            <div
                 onDragOver={(e) => {
                     e.preventDefault();
                     setDragging(true);
                 }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={onDrop}
-                className={`flex w-full cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
-                    dragging
-                        ? "border-accent bg-accent-soft"
-                        : "border-line bg-surface hover:border-zinc-300"
-                }`}
+                className={`rounded-lg border border-dashed border-line bg-surface px-4 py-5 ${dragging ? "border-accent" : ""}`}
             >
-                <input
-                    ref={inputRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={(e) => {
-                        handleFile(e.target.files[0]);
-                        e.target.value = ""; // lets you pick the same file twice in a row
-                    }}
-                />
-                <span aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-lg bg-accent-soft text-accent">
-                    <Upload size={20} />
-                </span>
-                {loading ? (
-                    <span className="flex items-center gap-2 text-sm text-muted">
-                        <span
-                            aria-hidden="true"
-                            className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-accent"
-                        />
-                        Reading your data…
-                    </span>
-                ) : (
-                    <span>
-                        <span className="block text-base font-semibold text-ink">
-                            Drop a CSV here, or click to browse
-                        </span>
-                        <span className="mt-1 block text-sm text-muted">Up to {MAX_MB} MB</span>
-                    </span>
-                )}
-            </button>
+                <label className="block text-sm text-ink">
+                    CSV file
+                    <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        disabled={loading}
+                        className="mt-2 block w-full text-sm text-muted file:mr-3 file:rounded file:border file:border-line file:bg-canvas file:px-3 file:py-1.5 file:text-sm"
+                        onChange={(e) => {
+                            handleFile(e.target.files[0]);
+                            e.target.value = "";
+                        }}
+                    />
+                </label>
+                <p className="mt-2 text-xs text-muted">
+                    Up to {MAX_MB} MB. Drag and drop works too.
+                </p>
+            </div>
 
-            {error && <p className="mt-2 text-center text-sm text-bad">{error}</p>}
+            {loading && <p className="mt-2 text-sm text-muted">Reading file…</p>}
+            {error && <p className="mt-2 text-sm text-bad">{error}</p>}
         </div>
     );
 }

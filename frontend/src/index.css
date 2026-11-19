@@ -1,9 +1,8 @@
 @import "tailwindcss";
 
-/* Minimal pro tool: one accent, flat surfaces, no effects.
-   Tailwind turns these tokens into classes like bg-surface, text-ink, border-line. */
+/* Flat tokens: one accent, no effects, no external fonts. */
 @theme {
-    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 
     --color-canvas: #f6f6f5;
     --color-surface: #ffffff;
@@ -20,24 +19,17 @@
     --color-bad-soft: #fdf0ef;
 }
 
-html {
-    scroll-behavior: smooth;
-}
-
 body {
     margin: 0;
     background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
 }
 
-/* Numbers line up in tables and stat blocks */
 .tnum {
     font-variant-numeric: tabular-nums;
 }
 
-/* A single, honest focus ring for keyboard users */
 :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;

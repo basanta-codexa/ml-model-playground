@@ -36,9 +36,9 @@ function Label({ title, hint }) {
     );
 }
 
-const chipBase = "rounded-md border px-2.5 py-1 text-xs transition-colors";
+const chipBase = "rounded-md border px-2.5 py-1 text-xs";
 const chipOn = "border-accent bg-accent-soft text-accent";
-const chipOff = "border-line bg-surface text-muted line-through decoration-line";
+const chipOff = "border-line bg-canvas text-muted line-through";
 
 export default function Preprocessing({ dataset, onPrepared }) {
     const columns = dataset.columns || [];
@@ -335,14 +335,8 @@ export default function Preprocessing({ dataset, onPrepared }) {
                         type="button"
                         onClick={run}
                         disabled={loading || !config.target}
-                        className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+                        className="rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium disabled:opacity-50"
                     >
-                        {loading && (
-                            <span
-                                aria-hidden="true"
-                                className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-                            />
-                        )}
                         {loading ? "Preparing…" : result ? "Prepare again" : "Prepare data"}
                     </button>
 
