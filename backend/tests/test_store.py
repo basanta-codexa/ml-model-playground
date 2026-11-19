@@ -86,10 +86,40 @@ def test_save_model_pickles_and_rehydrates(require_db, clean_store):
 
     payload = db.fetch_latest_model(dataset_id, "logistic_regression")
     assert isinstance(payload, bytes)
-    check_is_fitted(pickle.loads(payload))
+    loaded = pickle.loads(payload)
+    assert isinstance(loaded, dict)
+    check_is_fitted(loaded["pipeline"])
+    assert loaded["features"] == prepared.raw_features
 
     store._reset_memory()
     restored = store.get_model(dataset_id, "logistic_regression")
     assert restored["model"] is not None
     check_is_fitted(restored["model"])
+    assert restored["predictor"]["features"] == prepared.raw_features
     assert len(restored["model"].predict(prepared.X_train[:2])) == 2
+
+
+def test_legacy_estimator_payload_still_loads(require_db, clean_store):
+    raw, rows, n_columns = _iris_bytes()
+    dataset_id, persisted = store.save_dataset(raw, "Iris flowers", rows, n_columns)
+    assert persisted is True
+
+    config = PreprocessConfig(target="species", cv_folds=0)
+    prepared, _summary = prepare(store.get_dataset(dataset_id)["df"], config)
+    bundle = train_model("logistic_regression", prepared, tune=False)
+
+    # Older runs stored a bare estimator rather than the full predictor.
+    db.save_train_run(
+        dataset_id=dataset_id,
+        model_id="logistic_regression",
+        label="Logistic Regression",
+        task="classification",
+        tune=False,
+        result={"task": "classification"},
+        model_bytes=pickle.dumps(bundle["model"]),
+    )
+
+    store._reset_memory()
+    restored = store.get_model(dataset_id, "logistic_regression")
+    check_is_fitted(restored["model"])
+    assert restored.get("predictor") is None
