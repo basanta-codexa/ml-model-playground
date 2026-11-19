@@ -1,92 +1,21 @@
-# ML Model PlayGround
+# ML Model Playground
 
-Upload a real-world CSV, and watch it get read properly: numbers pulled out of
-units, prices cleaned up, spellings folded together, and a model scored
-honestly against a baseline. Every step explains itself in plain language.
+A local tool for training models on CSV files. Upload a file, inspect and clean it, choose a target, train a classifier or regressor, and read the scores. The backend does the parsing and modelling; the frontend is a plain interface over the API.
 
-It works on any kind of file. There is nothing in the code that knows what
-domain you are in: a sales export, a survey, a scientific dataset,
-a spreadsheet of hospital records and a price list all go down the same path.
+## Features
 
-> Work in progress, built step by step.
-
-## What it actually does
-
-The hard part of machine learning is not the model, it is the data. Most
-tools assume your CSV is tidy. This one does not.
-
-| Problem in a real file | What happens here |
-| --- | --- |
-| `"$1,100"`, `"963 hp"`, `"2.5 s"` are read as text | They are read as **numbers**, with the units and currency symbols taken off |
-| `"3-5 days"` is a range | It becomes the midpoint, and we tell you it was a range |
-| `"1,600 cc / 13.8 kwh"` mixes two measurements | The column is **split** into a cc column and a kWh column |
-| `"1.6 L"` and `"1,600 cc"` are the same thing | Both are converted to one scale |
-| `TOYOTA` and `Toyota` are counted as two companies | They are folded into **one** value |
-| `2–6 seats` uses a Windows dash | The dash is normalised, and the range is read |
-| `-` and `N/A` become a category | They are treated as **missing** and filled |
-| Rare values appear hundreds of times as their own columns | They are rolled into one `other` bucket |
-| A column gives the target away | It is **detected and dropped**, with the reason explained |
-| The target has 23 classes, or is a number | Any column can be the target. Classification **and** regression |
-
-## Two things it will not let you get away with
-
-**A feature that does not beat the baseline is not a feature.** On an
-unbalanced target, a column that knows nothing still "predicts" the majority
-class correctly most of the time. The leak detector compares every column
-against that floor, so it only drops a column when it genuinely gives the
-answer away, and keeps the ones that merely look suspicious.
-
-**A model that scores below the baseline is not "a low score".** It is worse
-than guessing, and the app says so, because that means the model found a
-pattern that does not hold on new rows.
-
-## Cross-validation, because one split is not a measurement
-
-Hold out 20% of the rows, train on the rest, and score on what was left
-behind. It is the standard way to check a model, and on a few dozen rows it
-is also a very noisy one: move a single row and the score moves by three
-points.
-
-So the playground trains every model several times over, on different rows,
-and reports the average with the spread attached:
-
-```
-iris, random forest
-  single split      90.0%
-  cross-validated   95.0% +/- 3.1     (folds: 95.8, 100, 95.8, 91.7, 91.7)
-  baseline          33.3%
-```
-
-The cross-validated number is the one the verdict is based on and the one
-the scoreboard ranks by. The single split is still shown, because the gap
-between the two is the interesting part: when they disagree, the split was
-either a lucky one or an unlucky one, and the app says which.
-
-Everything is rebuilt inside every fold, including the scaler and the
-encoders, so the folds cannot see each other. The tests check that, by
-running the cross-validation by hand and comparing the numbers.
-
-Every classifier is also scored on **AUC** (one-vs-rest, macro for
-multiclasses) alongside accuracy, because accuracy lies on an imbalanced
-target. And if your target really is lopsided — say it's 90% one class —
-the classes are weighted equally when training, and the result says so.
-The baseline stays unweighted; beating it is the same fight as ever.
-
-Every class also gets its own precision, recall, F1 and row count, so
-"92% accuracy" can never hide a class the model simply cannot see. And if
-you tick **Quick tune**, a small randomized search tries a handful of
-sensible settings, refits the winner, and tells you which one won.
-
-## Tech stack
-
-| Layer    | Tools                                       |
-| -------- | ------------------------------------------- |
-| Frontend | React, Vite (Tailwind + Framer Motion)      |
-| Backend  | FastAPI, pandas, scikit-learn               |
+- Reads CSVs in UTF-8, UTF-16 or Windows-1252; rejects duplicate column names and files over 10 MB.
+- Parses numbers out of text (`$1,100`, `963 hp`, `3-5 days`), converts compatible units, splits columns that mix measurements, folds case variants, and treats `-`/`N/A` as missing.
+- Detects feature columns that duplicate the target and can drop them. The majority-class baseline is reported with every score.
+- Splits train/test before fitting anything. Imputers, encoders, scalers and rare-category grouping are fitted on training rows only and rebuilt inside each cross-validation fold.
+- Classification: accuracy, precision, recall, F1 (macro and weighted), ROC AUC, per-class metrics and a confusion matrix.
+- Regression: R², MAE and RMSE, compared with a model that always predicts the mean.
+- Class weighting for imbalanced targets and an optional randomized parameter search.
+- Optional Postgres storage for datasets and past runs. The app still works if the database is unavailable; responses then include `persisted: false`.
 
 ## Run locally
 
-**Backend**
+Backend (Python 3.10+):
 
 ```bash
 cd backend
@@ -96,7 +25,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-**Frontend**
+Frontend:
 
 ```bash
 cd frontend
@@ -104,49 +33,67 @@ npm install
 npm run dev
 ```
 
+The Vite dev server runs on port 5173 and proxies `/api` to `http://localhost:8000`, where uvicorn serves the backend.
+
+Database (optional). Start it with `docker compose up -d db` from the repository root, then set `DATABASE_URL` if you want a different instance:
+
+```
+postgresql://ml_playground:ml_playground@127.0.0.1:5433/ml_playground
+```
+
 ## Tests
 
 ```bash
-cd backend
-python -m pytest tests -q
+cd backend && python -m pytest tests -q
+cd frontend && npm test
+cd backend && ruff check .
+cd frontend && npm run build
 ```
 
-The suite covers the parts that are easy to get quietly wrong: reading
-numbers out of messy text, folding spelling variants, spotting a column that
-gives the answer away, proving that the test rows never influenced the
-training, and proving that every fold of the cross-validation rebuilds the
-whole pipeline from scratch.
+CI runs lint, backend tests against a Postgres service, frontend tests and a production build on every pull request. Database-dependent tests skip when no Postgres is reachable.
 
-## How the backend is arranged
+## API
 
-| Module | What it owns |
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/upload` | Upload a CSV; returns a column summary and target suggestions |
+| GET | `/api/samples` | List built-in sample datasets |
+| POST | `/api/samples/{id}` | Load a sample dataset |
+| GET | `/api/datasets/{id}/profile` | Per-column profiling and warnings |
+| POST | `/api/datasets/{id}/preprocess` | Apply cleaning, splitting and preprocessing settings |
+| GET | `/api/models?task=` | List algorithms for a task |
+| POST | `/api/datasets/{id}/train` | Train one model; returns scores and verdict |
+| GET | `/api/history` | List recent saved runs |
+| GET | `/api/history/{id}` | Full saved result for one run |
+| GET | `/api/health` | API and database status |
+
+Training requires preprocessing to have been run for the dataset first.
+
+## Layout
+
+| Path | Responsibility |
 | --- | --- |
-| `textnorm.py` | Unicode clean-up: dashes, smart quotes, invisible characters, case folding |
-| `units.py` | The unit table: what each unit measures, and how to convert it |
-| `parsing.py` | Pulling numbers out of cells, handling ranges and compound cells |
-| `infer.py` | Deciding what each column really contains, and cleaning it |
-| `leakage.py` | Finding the columns that give the target away |
-| `target.py` | Suggesting what to predict, and whether it is a label or a number |
-| `transformers.py` | The rare-category grouper, fitted inside the pipeline |
-| `preprocessing.py` | The pipeline: clean, split, then fit on the training rows only |
-| `trainer.py` | Training, class weighting, quick tune, cross-validation, per-class metrics, scoring against a baseline |
-| `models.py` | The algorithm registry |
+| `backend/main.py`, `backend/routers/` | HTTP API |
+| `backend/csvio.py`, `backend/textnorm.py`, `backend/parsing.py`, `backend/units.py`, `backend/infer.py` | File decoding and cell/column cleaning |
+| `backend/leakage.py`, `backend/target.py` | Leak detection and target suggestions |
+| `backend/preprocessing.py`, `backend/transformers.py` | Split and fitted preprocessing pipeline |
+| `backend/models.py`, `backend/trainer.py` | Model registry, cross-validation, metrics, scoring |
+| `backend/store.py`, `backend/db.py` | In-memory cache and Postgres persistence |
+| `backend/tests/` | Backend tests |
+| `frontend/src/components/` | UI components |
 
-## Roadmap
+## Notes on scoring
 
-- [x] Step 1: Repo skeleton
-- [x] Step 2: Design system and landing page
-- [x] Step 3: Dataset upload
-- [x] Step 4: Data profiling
-- [x] Step 5: Preprocessing
-- [x] Step 6: Train a model
-- [x] Step 7: Smart parsing: numbers, units, ranges, mixed measurements
-- [x] Step 8: Leakage detection and category canonicalisation
-- [x] Step 9: Regression targets and regressors
-- [x] Step 10: Cross-validation, with the spread shown next to every score
-- [x] Step 11: Confusion matrix, drawn so a person can read it
-- [ ] Step 12: Model comparison across folds
-- [ ] Step 13: Feature importance
-- [ ] Step 14: Prediction demo
-- [ ] Step 15: Hyperparameter lab
-- [ ] Step 16: Polish, deploy
+Every score is compared with a baseline that uses no features: the most frequent class for classification, the mean for regression. Cross-validation runs on the training rows; the held-out split is kept in the response so the two can be compared. Fold scores, their mean and their standard deviation are returned for each reported metric.
+
+Classification cross-validates accuracy, precision, recall, F1 (macro and weighted) and ROC AUC. Regression cross-validates R², MAE and RMSE. Untuned classifiers also get a confusion matrix and per-class metrics computed from out-of-fold predictions across the training rows; those fields are omitted when Quick tune is on, because parameters chosen on all training rows would bias them.
+
+Quick tune reports a nested cross-validation estimate: an inner search selects parameters on each outer fold's training rows, and the outer fold scores the procedure on rows the search never saw. This makes tuned runs slower than untuned ones.
+
+Cleaning that runs before the split (number parsing, unit conversion, spelling folding) is unsupervised and does not use target values. Some of it inspects all rows, including rows that later land in the test set. Everything that learns from data is fitted inside the fold.
+
+## Not implemented
+
+- Feature importance
+- Prediction interface for new rows
+- Deployment configuration
