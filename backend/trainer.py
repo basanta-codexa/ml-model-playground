@@ -11,7 +11,11 @@ nothing, however good the score looks on its own.
 
 And every model is cross-validated, because a single test split of a few
 dozen rows is a noisy way to measure anything. The cross-validated score is
-the one we trust; the single split is kept so the two can be compared.
+the one we trust; the single split is kept so the two can be compared. For
+tuned models the cross-validation is nested: an inner search picks the
+parameters, and the outer folds score the *procedure* on rows the search
+never saw. Reporting the chosen parameters' score on the rows that chose
+them would be selection bias, not an estimate.
 """
 
 import time
@@ -22,6 +26,7 @@ from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     f1_score,
+    make_scorer,
     mean_absolute_error,
     mean_squared_error,
     precision_recall_fscore_support,
@@ -30,11 +35,24 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, RandomizedSearchCV, StratifiedKFold, cross_validate
+from sklearn.model_selection import (
+    KFold,
+    RandomizedSearchCV,
+    StratifiedKFold,
+    cross_val_predict,
+    cross_validate,
+)
 from sklearn.pipeline import Pipeline
 
 from models import MODELS, build_model, tuning_grid
 from preprocessing import build_preprocessor
+
+# CV bundles that readers expect as percentages (0-100). AUC and R-squared
+# stay as ratios; sklearn's loss scorers come back negative and are flipped.
+_PERCENT_METRICS = {"accuracy", "precision", "recall", "f1", "f1_weighted"}
+_LOSS_METRICS = {"mae", "rmse"}
+_CLASSIFICATION_METRICS = ("accuracy", "auc", "precision", "recall", "f1", "f1_weighted")
+_REGRESSION_METRICS = ("r2", "mae", "rmse")
 
 
 def _pct(value: float) -> float:
@@ -80,16 +98,18 @@ def _usable_folds(prepared, wanted: int) -> int | None:
 
 def _cv_result(values: np.ndarray, metric: str, n_splits: int) -> dict:
     """Package the fold scores for the frontend."""
-    if metric == "accuracy":
-        scaled = values * 100
-    else:
-        # R-squared is a ratio, not a percentage, so it is left alone.
-        scaled = values
+    values = np.asarray(values, dtype=float)
+    if metric in _PERCENT_METRICS:
+        values = values * 100
+    elif metric in _LOSS_METRICS:
+        # sklearn exposes MAE/RMSE as *negative* scores (higher is better).
+        # Flip them so the reader sees a real error in the target's units.
+        values = -values
     return {
         "metric": metric,
-        "folds": [round(float(v), 3) for v in scaled],
-        "mean": round(float(scaled.mean()), 3),
-        "std": round(float(scaled.std()), 3),
+        "folds": [round(float(v), 3) for v in values],
+        "mean": round(float(values.mean()), 3),
+        "std": round(float(values.std()), 3),
         "n_splits": int(n_splits),
     }
 
@@ -130,49 +150,84 @@ def _auc_scorer(n_classes: int):
     return scorer
 
 
-def _cross_validate(prepared, build) -> dict | None:
+def _classification_scoring(n_classes: int) -> dict:
+    """Every classification metric we report, cross-validated per fold."""
+    return {
+        "accuracy": "accuracy",
+        "auc": _auc_scorer(n_classes),
+        "precision": make_scorer(precision_score, average="macro", zero_division=0),
+        "recall": make_scorer(recall_score, average="macro", zero_division=0),
+        "f1": make_scorer(f1_score, average="macro", zero_division=0),
+        "f1_weighted": make_scorer(f1_score, average="weighted", zero_division=0),
+    }
+
+
+def _regression_scoring() -> dict:
+    """R2 plus the two error metrics, cross-validated per fold."""
+    return {
+        "r2": "r2",
+        "mae": "neg_mean_absolute_error",
+        "rmse": "neg_root_mean_squared_error",
+    }
+
+
+def _cross_validate(prepared, build, tune_spec: dict | None = None) -> dict | None:
     """Cross-validate a freshly built model inside every fold.
 
-    Returns {"accuracy", "auc"} for classifiers, {"r2"} for regressors.
-    Every fold rebuilds the preprocessor and the model from scratch.
+    Returns accuracy/AUC/precision/recall/F1 (macro and weighted) bundles for
+    classifiers and R2/MAE/RMSE bundles for regressors. Every fold rebuilds
+    the preprocessor and the model from scratch.
+
+    When ``tune_spec`` is given the folds are *nested*: an inner
+    RandomizedSearchCV chooses hyperparameters on the outer fold's training
+    rows, and the score is measured on that outer fold's held-out rows. That
+    is the only honest estimate for a tuned model — scoring the chosen
+    parameters on the very rows that chose them is selection bias.
     """
     n_splits = _usable_folds(prepared, prepared.config.cv_folds)
     if n_splits is None:
         return None
     splitter = _splitter(prepared, n_splits)
 
+    estimator = _fresh_pipeline(prepared, build())
+    if tune_spec is not None:
+        # The pipeline's estimator step is named "model", so the grid keys
+        # need that prefix when the search wraps the whole pipeline.
+        grid = {f"model__{name}": values for name, values in tune_spec["grid"].items()}
+        estimator = RandomizedSearchCV(
+            estimator,
+            grid,
+            n_iter=tune_spec["n_iter"],
+            cv=_splitter(prepared, tune_spec["inner_folds"]),
+            scoring=tune_spec["scoring"],
+            random_state=tune_spec["seed"],
+            error_score="raise",
+        )
+
     if prepared.task == "classification":
-        scoring = {"accuracy": "accuracy",
-                   "auc": _auc_scorer(len(prepared.class_names))}
-        try:
-            raw = cross_validate(
-                _fresh_pipeline(prepared, build()),
-                prepared.X_train_raw,
-                prepared.y_train,
-                cv=splitter,
-                scoring=scoring,
-                error_score="raise",
-            )
-        except ValueError:
-            return None
-        return {
-            "accuracy": _cv_result(np.asarray(raw["test_accuracy"]), "accuracy", n_splits),
-            "auc": _cv_result(np.asarray(raw["test_auc"]), "auc", n_splits),
-        }
+        scoring = _classification_scoring(len(prepared.class_names))
+        names = _CLASSIFICATION_METRICS
+    else:
+        scoring = _regression_scoring()
+        names = _REGRESSION_METRICS
 
     try:
         raw = cross_validate(
-            _fresh_pipeline(prepared, build()),
+            estimator,
             prepared.X_train_raw,
             prepared.y_train,
             cv=splitter,
-            scoring="r2",
+            scoring=scoring,
             error_score="raise",
         )
     except ValueError:
         # A fold where the model cannot be fitted (one class missing, say).
         return None
-    return {"r2": _cv_result(np.asarray(raw["test_score"]), "r2", n_splits)}
+
+    return {
+        name: _cv_result(raw[f"test_{name}"], name, n_splits)
+        for name in names
+    }
 
 
 def _baseline_bundle(prepared) -> dict | None:
@@ -198,16 +253,16 @@ def _verdict(train_acc: float, test_acc: float, baseline_acc: float,
              cv: dict | None = None, cv_baseline: dict | None = None) -> dict:
     """Explain the score in plain language.
 
-    When we have cross-validation we judge the model on that, not on the
-    single split. A split of a few dozen rows can be several points lucky
-    or unlucky, and the cross-validated mean is the number worth trusting.
+    The score and the baseline it is compared with always come from the same
+    place: either both cross-validated, or both from the single held-out
+    split. Mixing the two would be comparing different estimates.
     """
     train = _pct(train_acc)
     test = _pct(test_acc)
 
-    if cv:
+    if cv and cv_baseline:
         score = cv["mean"]
-        base = cv_baseline["mean"] if cv_baseline else _pct(baseline_acc)
+        base = cv_baseline["mean"]
         spread = cv["std"]
         source = (f"Cross-validated over {cv['n_splits']} folds, it scores "
                   f"{score:g}%, plus or minus {spread:g} points.")
@@ -255,38 +310,51 @@ def _verdict(train_acc: float, test_acc: float, baseline_acc: float,
         "tone": "good",
         "title": "Learned something real",
         "text": f"{score:g}%, well above the {base:g}% you'd get by guessing. {source} "
-                f"The gap between the training rows and the new rows is small, so the "
-                f"pattern is real and not memorised.",
+                f"The model is finding a pattern that holds on rows it was not fitted on.",
     }
 
 
 def _regression_verdict(r2: float, mae: float, baseline_mae: float,
                         cv: dict | None = None,
-                        cv_baseline: dict | None = None) -> dict:
-    if cv:
+                        cv_baseline: dict | None = None,
+                        cv_mae: dict | None = None,
+                        cv_baseline_mae: dict | None = None) -> dict:
+    """Explain a regression score, comparing like with like.
+
+    When cross-validation is available both the R-squared and the MAE (and
+    its baseline) come from the CV bundles. Otherwise all three come from
+    the single held-out split. Comparing a CV R-squared with a single-split
+    MAE would be mixing sources and could tell the user the wrong story.
+    """
+    if cv and cv_mae is not None and cv_baseline_mae is not None:
         score = cv["mean"]
         spread = cv["std"]
+        effective_mae = cv_mae["mean"]
+        effective_base_mae = cv_baseline_mae["mean"]
         source = (f"Cross-validated over {cv['n_splits']} folds, it reaches an "
-                  f"R-squared of {score:.2f}, plus or minus {spread:.2f}.")
+                  f"R-squared of {score:.2f}, plus or minus {spread:.2f}, with a typical "
+                  f"error of {effective_mae:,.0f}.")
     else:
         score = r2
         spread = 0.0
+        effective_mae = mae
+        effective_base_mae = baseline_mae
         source = f"On the held-out test rows it reaches an R-squared of {score:.2f}."
 
-    if baseline_mae <= 0:
+    if effective_base_mae <= 0:
         return {
             "tone": "bad",
             "title": "Nothing to compare against",
             "text": "The target has no variation to predict, so there is no way to "
                     "tell a good model from a bad one here.",
         }
-    if mae > baseline_mae * 1.02:
+    if effective_mae > effective_base_mae * 1.02:
         return {
             "tone": "bad",
             "title": "Worse than guessing the average",
-            "text": f"Always predicting the average is off by {baseline_mae:,.0f} on "
-                    f"average. This model is off by {mae:,.0f}, so it did not just fail "
-                    f"to find the pattern, it found one that does not hold on new rows.",
+            "text": f"Always predicting the average is off by {effective_base_mae:,.0f} on "
+                    f"average. This model is off by {effective_mae:,.0f}, so it did not just "
+                    f"fail to find the pattern, it found one that does not hold on new rows.",
         }
     if score < 0:
         return {
@@ -301,7 +369,7 @@ def _regression_verdict(r2: float, mae: float, baseline_mae: float,
             "tone": "mid",
             "title": "Explains only some of it",
             "text": f"R-squared {score:.2f}: the model catches {score:.0%} of the "
-                    f"variation in the target, and is off by {mae:,.0f} on a typical "
+                    f"variation in the target, and is off by {effective_mae:,.0f} on a typical "
                     f"row. {source} There is probably more signal in the data.",
         }
     return {
@@ -309,7 +377,7 @@ def _regression_verdict(r2: float, mae: float, baseline_mae: float,
         "title": "Learned something real",
         "text": f"R-squared {score:.2f}: the model explains {score:.0%} of the variation "
                 f"in the target, and beats the average by "
-                f"{100 * (1 - mae / baseline_mae):.0%}. {source}",
+                f"{100 * (1 - effective_mae / effective_base_mae):.0%}. {source}",
     }
 
 
@@ -329,7 +397,9 @@ def _per_class(y_test, y_pred, class_names) -> list[dict]:
 def _classification_result(model_id, model, prepared, fit_ms, y_pred,
                             cv=None, cv_baseline=None, cv_auc=None,
                             cv_baseline_auc=None, class_weight=None,
-                            tuned_params=None) -> dict:
+                            tuned_params=None, cv_precision=None,
+                            cv_recall=None, cv_f1=None, cv_f1_weighted=None,
+                            oof_confusion_matrix=None, oof_per_class=None) -> dict:
     y_train = prepared.y_train
     y_test = prepared.y_test
 
@@ -368,18 +438,28 @@ def _classification_result(model_id, model, prepared, fit_ms, y_pred,
         "confusion_matrix": matrix,
         "class_names": prepared.class_names,
         "per_class": _per_class(y_test, y_pred, prepared.class_names),
+        # Out-of-fold metrics over the TRAINING rows. Support here sums to
+        # the number of training rows, which makes per-class support a
+        # meaningful count rather than a handful of holdout rows.
+        "oof_confusion_matrix": oof_confusion_matrix,
+        "oof_per_class": oof_per_class,
         "class_weight": class_weight,
         "tuned": {"params": tuned_params} if tuned_params else None,
         "cv": cv,
         "cv_auc": cv_auc,
         "cv_baseline": cv_baseline,
         "cv_baseline_auc": cv_baseline_auc,
+        "cv_precision": cv_precision,
+        "cv_recall": cv_recall,
+        "cv_f1": cv_f1,
+        "cv_f1_weighted": cv_f1_weighted,
         "verdict": _verdict(train_acc, test_acc, baseline_acc, cv, cv_baseline),
     }
 
 
 def _regression_result(model_id, model, prepared, fit_ms, y_pred,
-                       cv=None, cv_baseline=None, tuned_params=None) -> dict:
+                       cv=None, cv_baseline=None, tuned_params=None,
+                       cv_mae=None, cv_rmse=None, cv_baseline_mae=None) -> dict:
     y_train = prepared.y_train
     y_test = prepared.y_test
 
@@ -410,8 +490,12 @@ def _regression_result(model_id, model, prepared, fit_ms, y_pred,
         "target_mean": round(float(np.mean(y_test)), 2),
         "cv": cv,
         "cv_baseline": cv_baseline,
+        "cv_mae": cv_mae,
+        "cv_rmse": cv_rmse,
+        "cv_baseline_mae": cv_baseline_mae,
         "tuned": {"params": tuned_params} if tuned_params else None,
-        "verdict": _regression_verdict(test_r2, mae, baseline_mae, cv, cv_baseline),
+        "verdict": _regression_verdict(test_r2, mae, baseline_mae, cv, cv_baseline,
+                                       cv_mae, cv_baseline_mae),
     }
 
 
@@ -442,23 +526,34 @@ def train_model(model_id: str, prepared, tune: bool = False) -> dict:
     (and says so), optionally runs a small randomized search over the
     model's few meaningful knobs, and cross-validates the exact model the
     user trains — same class weights, same tuned parameters — fold by fold.
+
+    For tuned models the reported cross-validation is *nested*: outer folds
+    give the estimate, inner folds run the search. The final model the user
+    keeps is still fitted with the best parameters found on the full
+    training rows.
     """
     seed = prepared.config.random_state
     task = prepared.task
     class_weight = _classification_weight(prepared)
     tuned_params = None
 
-    folds = _usable_folds(prepared, 3) or 2
-
     grid = tuning_grid(model_id) if tune else {}
-    if grid:
+    tune_spec = None
+    # A stratified search needs at least two rows in the smallest class.
+    # When a split leaves a class with a single row, no stratified fold can
+    # be built and StratifiedKFold would raise (surfacing as a 500). Train
+    # with the model's defaults instead of pretending to tune.
+    inner_folds = _usable_folds(prepared, 3) if grid else None
+    if grid and inner_folds is not None:
+        n_iter = min(12, int(np.prod([len(v) for v in grid.values()])))
+        inner_scoring = "accuracy" if task == "classification" else "r2"
         model = build_model(model_id, seed, class_weight)
         search = RandomizedSearchCV(
             model,
             grid,
-            n_iter=min(12, int(np.prod([len(v) for v in grid.values()]))),
-            cv=_splitter(prepared, folds),
-            scoring="accuracy" if task == "classification" else "r2",
+            n_iter=n_iter,
+            cv=_splitter(prepared, inner_folds),
+            scoring=inner_scoring,
             random_state=seed,
             error_score="raise",
         )
@@ -467,6 +562,15 @@ def train_model(model_id: str, prepared, tune: bool = False) -> dict:
         fit_ms = (time.perf_counter() - start) * 1000
         tuned_params = dict(search.best_params_)
         model = search.best_estimator_
+        # The reported estimate must not reuse the rows that picked these
+        # parameters, so the outer cross-validation re-runs the search.
+        tune_spec = {
+            "grid": grid,
+            "n_iter": n_iter,
+            "inner_folds": inner_folds,
+            "scoring": inner_scoring,
+            "seed": seed,
+        }
     else:
         model = build_model(model_id, seed, class_weight)
         start = time.perf_counter()
@@ -481,20 +585,45 @@ def train_model(model_id: str, prepared, tune: bool = False) -> dict:
             fresh.set_params(**tuned_params)
         return fresh
 
-    # Cross-validation on the training rows. This is the number we trust:
-    # a single test split of a few dozen rows swings by several points
-    # depending on which rows it happened to hold back.
-    cv_bundle = _cross_validate(prepared, model_factory)
+    cv_bundle = _cross_validate(prepared, model_factory, tune_spec=tune_spec)
     cv_baseline_bundle = _baseline_bundle(prepared) if cv_bundle else None
 
     def pick(bundle, key):
         return bundle[key] if bundle else None
 
+    # Out-of-fold predictions over the training rows give per-class support
+    # that actually means something (one row per training example), and a
+    # confusion matrix free of the tiny holdout's noise. The original
+    # holdout-based fields stay untouched for backward compatibility.
+    # For tuned runs the parameters were chosen on all training rows, so OOF
+    # predictions made with them would carry the same selection bias the
+    # nested CV was introduced to remove. Withhold the fields in that case
+    # rather than publish a flattering number.
+    oof_confusion = None
+    oof_per_class = None
+    if task == "classification" and cv_bundle is not None and tune_spec is None:
+        oof_pred = cross_val_predict(
+            _fresh_pipeline(prepared, model_factory()),
+            prepared.X_train_raw,
+            prepared.y_train,
+            cv=_splitter(prepared, cv_bundle["accuracy"]["n_splits"]),
+        )
+        labels = list(range(len(prepared.class_names)))
+        oof_confusion = confusion_matrix(
+            prepared.y_train, oof_pred, labels=labels).tolist()
+        oof_per_class = _per_class(
+            prepared.y_train, oof_pred, prepared.class_names)
+
     if task == "regression":
-        result = _regression_result(model_id, model, prepared, fit_ms, y_pred,
-                                    cv=pick(cv_bundle, "r2"),
-                                    cv_baseline=pick(cv_baseline_bundle, "r2"),
-                                    tuned_params=tuned_params)
+        result = _regression_result(
+            model_id, model, prepared, fit_ms, y_pred,
+            cv=pick(cv_bundle, "r2"),
+            cv_baseline=pick(cv_baseline_bundle, "r2"),
+            cv_mae=pick(cv_bundle, "mae"),
+            cv_rmse=pick(cv_bundle, "rmse"),
+            cv_baseline_mae=pick(cv_baseline_bundle, "mae"),
+            tuned_params=tuned_params,
+        )
     else:
         result = _classification_result(
             model_id, model, prepared, fit_ms, y_pred,
@@ -502,8 +631,15 @@ def train_model(model_id: str, prepared, tune: bool = False) -> dict:
             cv_baseline=pick(cv_baseline_bundle, "accuracy"),
             cv_auc=pick(cv_bundle, "auc"),
             cv_baseline_auc=pick(cv_baseline_bundle, "auc"),
+            cv_precision=pick(cv_bundle, "precision"),
+            cv_recall=pick(cv_bundle, "recall"),
+            cv_f1=pick(cv_bundle, "f1"),
+            cv_f1_weighted=pick(cv_bundle, "f1_weighted"),
+            oof_confusion_matrix=oof_confusion,
+            oof_per_class=oof_per_class,
             class_weight=class_weight,
-            tuned_params=tuned_params)
+            tuned_params=tuned_params,
+        )
 
     result = _add_leak_note(result, prepared)
 
