@@ -23,9 +23,6 @@ import pandas as pd
 
 from textnorm import canonical_key
 
-# A feature that reproduces the target this well is not predicting it.
-LEAK_PURITY = 0.95
-
 # A copy with different words still has the target's shape: the same number
 # of groups, and each group maps onto exactly one answer.
 COPY_PURITY = 0.90

@@ -21,11 +21,12 @@ class RareCategoryGrouper(BaseEstimator, TransformerMixin):
     are real signal, so we keep those and roll the rest into one "other"
     bucket.
 
-    The threshold adapts to the size of the data. A fixed count of 20 would
-    throw away perfectly good categories in a 300-row file, and would be far
-    too generous in a file with 50,000 rows. So we also cap it at a small
-    share of the rows: a value has to appear in at least 1% of them to
-    earn its own column.
+    On small datasets the threshold is lowered automatically: a fixed count
+    of 20 would throw away perfectly good categories in a 300-row file. The
+    effective count is the smaller of the configured threshold and 1% of the
+    rows, with a floor of 2. On large files the configured threshold remains
+    the limit; raise ``rare_threshold`` in the preparation settings if a
+    high-cardinality column still produces too many near-empty columns.
     """
 
     def __init__(self, threshold: int = 20, other_label: str = "other",
