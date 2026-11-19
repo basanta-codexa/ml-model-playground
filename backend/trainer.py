@@ -219,15 +219,22 @@ def _cross_validate(prepared, build, tune_spec: dict | None = None) -> dict | No
             cv=splitter,
             scoring=scoring,
             error_score="raise",
+            return_train_score=True,
         )
     except ValueError:
         # A fold where the model cannot be fitted (one class missing, say).
         return None
 
-    return {
+    result = {
         name: _cv_result(raw[f"test_{name}"], name, n_splits)
         for name in names
     }
+    if prepared.task == "classification":
+        # Training-fold accuracy comes from the same folds as the headline
+        # score, so the two can be compared without mixing data sources.
+        result["train_accuracy"] = _cv_result(
+            raw["train_accuracy"], "accuracy", n_splits)
+    return result
 
 
 def _baseline_bundle(prepared) -> dict | None:
@@ -250,29 +257,34 @@ def _baseline_bundle(prepared) -> dict | None:
 
 
 def _verdict(train_acc: float, test_acc: float, baseline_acc: float,
-             cv: dict | None = None, cv_baseline: dict | None = None) -> dict:
+             cv: dict | None = None, cv_baseline: dict | None = None,
+             cv_train: dict | None = None) -> dict:
     """Explain the score in plain language.
 
-    The score and the baseline it is compared with always come from the same
-    place: either both cross-validated, or both from the single held-out
-    split. Mixing the two would be comparing different estimates.
+    Score, baseline and training score all come from the same source: either
+    every value is cross-validated, or every value comes from the single
+    held-out split. The margin around the baseline grows with the fold spread,
+    so a small lead on an unstable score is not reported as a real finding.
     """
-    train = _pct(train_acc)
-    test = _pct(test_acc)
-
     if cv and cv_baseline:
         score = cv["mean"]
         base = cv_baseline["mean"]
         spread = cv["std"]
+        train = cv_train["mean"] if cv_train else _pct(train_acc)
+        margin = max(2.0, spread)
         source = (f"Cross-validated over {cv['n_splits']} folds, it scores "
                   f"{score:g}%, plus or minus {spread:g} points.")
+        train_source = "the training folds" if cv_train else "the training rows"
     else:
-        score = test
+        score = _pct(test_acc)
         base = _pct(baseline_acc)
         spread = 0.0
+        train = _pct(train_acc)
+        margin = 2.0
         source = f"On the held-out test rows it scores {score:g}%."
+        train_source = "the training rows"
 
-    if score < base - 2:
+    if score < base - margin:
         return {
             "tone": "bad",
             "title": "Worse than guessing",
@@ -282,7 +294,7 @@ def _verdict(train_acc: float, test_acc: float, baseline_acc: float,
                     f"the columns are not what the model needs, or there is too little "
                     f"data for the pattern to be real.",
         }
-    if score <= base + 1:
+    if score <= base + margin:
         return {
             "tone": "bad",
             "title": "No better than guessing",
@@ -294,7 +306,7 @@ def _verdict(train_acc: float, test_acc: float, baseline_acc: float,
         return {
             "tone": "mid",
             "title": "Possible overfitting",
-            "text": f"{train:g}% on rows it studied but only {score:g}% on rows it had not "
+            "text": f"{train:g}% on {train_source} but only {score:g}% on rows it had not "
                     f"seen. {source} It may have memorised the training data instead of "
                     f"learning patterns that carry over.",
         }
@@ -399,7 +411,7 @@ def _classification_result(model_id, model, prepared, fit_ms, y_pred,
                             cv_baseline_auc=None, class_weight=None,
                             tuned_params=None, cv_precision=None,
                             cv_recall=None, cv_f1=None, cv_f1_weighted=None,
-                            oof_confusion_matrix=None, oof_per_class=None) -> dict:
+                            cv_train=None, oof_confusion_matrix=None, oof_per_class=None) -> dict:
     y_train = prepared.y_train
     y_test = prepared.y_test
 
@@ -453,7 +465,9 @@ def _classification_result(model_id, model, prepared, fit_ms, y_pred,
         "cv_recall": cv_recall,
         "cv_f1": cv_f1,
         "cv_f1_weighted": cv_f1_weighted,
-        "verdict": _verdict(train_acc, test_acc, baseline_acc, cv, cv_baseline),
+        "cv_train": cv_train,
+        "verdict": _verdict(train_acc, test_acc, baseline_acc, cv, cv_baseline,
+                            cv_train),
     }
 
 
@@ -635,6 +649,7 @@ def train_model(model_id: str, prepared, tune: bool = False) -> dict:
             cv_recall=pick(cv_bundle, "recall"),
             cv_f1=pick(cv_bundle, "f1"),
             cv_f1_weighted=pick(cv_bundle, "f1_weighted"),
+            cv_train=pick(cv_bundle, "train_accuracy"),
             oof_confusion_matrix=oof_confusion,
             oof_per_class=oof_per_class,
             class_weight=class_weight,
