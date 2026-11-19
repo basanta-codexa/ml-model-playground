@@ -42,6 +42,8 @@ class ColumnInfo:
     dimension: str | None = None   # what that unit measures
     units: dict = field(default_factory=dict)       # unit -> cells
     dimensions: dict = field(default_factory=dict)  # dimension -> cells
+    currencies: dict = field(default_factory=dict)  # currency -> cells
+    mixed_currency: bool = False
     mixed: bool = False
     split_columns: list = field(default_factory=list)
     variants: list = field(default_factory=list)
@@ -60,6 +62,8 @@ class ColumnInfo:
             "dimension": self.dimension,
             "units": self.units,
             "dimensions": self.dimensions,
+            "currencies": self.currencies,
+            "mixed_currency": self.mixed_currency,
             "mixed": self.mixed,
             "split_columns": self.split_columns,
             "variants": self.variants,
@@ -124,6 +128,8 @@ def infer_column(series: pd.Series) -> ColumnInfo:
             continue
         if cell.unit:
             info.units[cell.unit] = info.units.get(cell.unit, 0) + 1
+        if cell.currency:
+            info.currencies[cell.currency] = info.currencies.get(cell.currency, 0) + 1
         for dimension in cell.by_dimension:
             info.dimensions[dimension] = info.dimensions.get(dimension, 0) + 1
 
@@ -155,6 +161,18 @@ def infer_column(series: pd.Series) -> ColumnInfo:
                         f"{len(real_dimensions)} separate columns instead of "
                         f"pretending they can be compared.",
             })
+
+    if info.kind == "numeric" and len(info.currencies) > 1:
+        # Money in different currencies is not one number scale. "$100" and
+        # "Rs 100" must not be averaged together as if they were equal.
+        info.mixed_currency = True
+        info.notes.append({
+            "level": "warn",
+            "title": "Mixed currencies in one column",
+            "text": f"'{name}' mixes {', '.join(sorted(info.currencies))}. These are "
+                    f"not the same scale, so the column is split into one column "
+                    f"per currency instead of treating the amounts as equal.",
+        })
 
     if info.kind == "categorical":
         info.variants = group_variants(non_blank)
@@ -199,6 +217,28 @@ def clean_numeric(series: pd.Series, info: ColumnInfo) -> tuple[pd.Series, list[
             out.append((split["name"], pd.Series(numbers, index=series.index,
                                                  dtype="float64")))
         return out, info.notes
+
+    if info.dimension == "currency":
+        currencies = sorted({c.currency for c in cells if c.numeric and c.currency})
+        if len(currencies) > 1:
+            # Keep the currencies apart. A single column would silently treat
+            # different currencies as the same amount.
+            out = []
+            for currency in currencies:
+                numbers = [
+                    cell.value if cell.numeric and cell.currency == currency else np.nan
+                    for cell in cells
+                ]
+                out.append((f"{info.name} ({currency})",
+                            pd.Series(numbers, index=series.index, dtype="float64")))
+            unmarked = [
+                cell.value if cell.numeric and not cell.currency else np.nan
+                for cell in cells
+            ]
+            if any(np.isfinite(v) for v in unmarked if v is not None):
+                out.append((f"{info.name} (no currency)",
+                            pd.Series(unmarked, index=series.index, dtype="float64")))
+            return out, info.notes
 
     # One dimension: convert everything into the base unit of that dimension.
     base = BASE_UNIT.get(info.dimension or "", "")

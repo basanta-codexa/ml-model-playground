@@ -6,8 +6,12 @@ leak information from the test set into training (data leakage).
 
 Before the split we do the cleaning that needs no learning: reading numbers
 out of "3-5 days", turning "750 ml" and "1 l" into one scale, folding
-"IN-STORE" and "In-store" into one value. None of that looks at the test
-rows' statistics, so it cannot leak.
+"IN-STORE" and "In-store" into one value. These steps are unsupervised: they
+never look at a target value. Some of them (unit discovery, choosing a
+readable spelling) do look at every row, including rows that later land in
+the test set — that is transductive cleanup, not target leakage. Anything
+that actually learns from data (imputers, encoders, scalers, rare-value
+grouping) is fitted on the training rows only.
 
 The result is not just a matrix. It also explains itself: every decision we
 made is in the report, because a tool that silently renames your columns is
@@ -529,6 +533,14 @@ def prepare_target_values(data: pd.DataFrame, cfg: PreprocessConfig,
 
     if task == "regression":
         unit = info.unit
+        if len(info.currencies) > 1:
+            notes.append({
+                "level": "warn",
+                "title": "Mixed currencies in the target",
+                "text": f"'{cfg.target}' mixes {', '.join(sorted(info.currencies))}. "
+                        f"The amounts were read as bare numbers, so the target is not "
+                        f"on one comparable scale. Convert it to one currency first.",
+            })
         if pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series):
             values = pd.to_numeric(series, errors="coerce")
         elif cfg.parse_numbers:
