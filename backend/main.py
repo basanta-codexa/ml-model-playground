@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import db
-from routers import datasets, history, preprocess, training
+from routers import datasets, history, prediction, preprocess, training
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ml_playground")
@@ -41,6 +41,7 @@ app.add_middleware(
 app.include_router(datasets.router)
 app.include_router(preprocess.router)
 app.include_router(training.router)
+app.include_router(prediction.router)
 app.include_router(history.router)
 
 
