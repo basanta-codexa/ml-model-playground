@@ -1,17 +1,33 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import datasets, preprocess, training
+import db
+from routers import datasets, history, preprocess, training
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ml_playground")
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The app runs fine without Postgres, but print one loud line so the
+    # developer knows history is off before they go looking for it.
+    try:
+        db.init_schema()
+        logger.info("database ready")
+    except Exception:
+        logger.warning("database unavailable — runs will not be saved to history")
+    yield
+
+
 app = FastAPI(
     title="ML Model Playground API",
-    description="Upload a dataset, train models, and get results as JSON."
+    description="Upload a dataset, train models, and get results as JSON.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -25,6 +41,7 @@ app.add_middleware(
 app.include_router(datasets.router)
 app.include_router(preprocess.router)
 app.include_router(training.router)
+app.include_router(history.router)
 
 
 @app.exception_handler(Exception)
@@ -47,4 +64,4 @@ def root():
 @app.get("/api/health")
 def health():
     """The frontend pings this to show a live 'API connected' badge."""
-    return {"status": "ok", "version": app.version}
+    return {"status": "ok", "version": app.version, "db": "up" if db.health() else "down"}

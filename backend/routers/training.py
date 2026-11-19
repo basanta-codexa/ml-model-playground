@@ -41,5 +41,8 @@ def train(dataset_id: str, request: TrainRequest):
             status_code=400,
             detail=f"This model couldn't be trained on the current split: {err}") from err
 
-    save_model(dataset_id, request.model_id, bundle)
-    return bundle["result"]
+    _run_id, persisted = save_model(dataset_id, request.model_id, bundle)
+    result = dict(bundle["result"])
+    if not persisted:
+        result["persisted"] = False
+    return result

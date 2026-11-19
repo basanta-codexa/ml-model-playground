@@ -14,6 +14,6 @@ def preprocess(dataset_id: str, config: PreprocessConfig):
     except PreprocessError as err:
         # The service raises plain Python errors; only the router knows about HTTP
         raise HTTPException(status_code=400, detail=str(err)) from err
-    save_prepared(dataset_id, prepared)
+    save_prepared(dataset_id, prepared, config)
     summary["dataset_id"] = dataset_id
     return summary
