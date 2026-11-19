@@ -2,25 +2,30 @@ import Panel from "./Panel";
 import FoldChart from "./FoldChart";
 import ConfusionMatrix from "./ConfusionMatrix";
 
-const toneStyle = {
-    good: "border-ok bg-ok-soft text-ok",
-    mid: "border-warn bg-warn-soft text-warn",
-    bad: "border-bad bg-bad-soft text-bad",
-};
+const toneStyle = { good: "text-ok", mid: "text-warn", bad: "text-bad" };
 
-const BASELINE = "#cbd5e1";
-const TRAIN = "#94a3b8";
-const CV = "#2563eb";
-const HOLDOUT = "#93c5fd";
+function fmt(value, digits = 1) {
+    return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "—";
+}
 
-// Quiet footnotes about how the model was built and scored. Absent fields
-// render nothing, so un-tuned runs show nothing extra.
+function count(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : "—";
+}
+
+function Stat({ label, value }) {
+    return (
+        <div className="rounded-md bg-canvas px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wider text-muted">{label}</div>
+            <div className="tnum mt-1 text-sm text-ink">{value}</div>
+        </div>
+    );
+}
+
 function RunNotes({ result }) {
     const notes = [];
     if (result.cv_auc) {
-        const isBinary = result.class_names?.length === 2;
-        const kind = isBinary ? "binary" : "one-vs-rest, macro";
-        notes.push(`AUC (${kind}): ${result.cv_auc.mean.toFixed(3)} ± ${result.cv_auc.std.toFixed(3)}`);
+        const kind = result.class_names?.length === 2 ? "binary" : "one-vs-rest, macro";
+        notes.push(`AUC (${kind}): ${fmt(result.cv_auc.mean, 3)} ± ${fmt(result.cv_auc.std, 3)}`);
     }
     if (result.class_weight) {
         notes.push("Target was imbalanced, so the classes were weighted equally");
@@ -38,7 +43,7 @@ function RunNotes({ result }) {
 function PerClassTable({ rows }) {
     if (!rows?.length) return null;
     return (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+        <div className="mt-4 overflow-x-auto rounded-md border border-line">
             <table className="w-full text-left text-xs">
                 <thead>
                     <tr className="border-b border-line text-muted">
@@ -52,13 +57,11 @@ function PerClassTable({ rows }) {
                 <tbody>
                     {rows.map((r) => (
                         <tr key={r.label} className="border-b border-line/60 last:border-0">
-                            <td className="px-3 py-2 text-ink/90">{r.label}</td>
-                            <td className="tnum px-3 py-2 text-muted">{r.precision.toFixed(1)}%</td>
-                            <td className={`tnum px-3 py-2 ${r.recall < 70 ? "font-semibold text-bad" : "text-muted"}`}>
-                                {r.recall.toFixed(1)}%
-                            </td>
-                            <td className="tnum px-3 py-2 text-muted">{r.f1.toFixed(1)}%</td>
-                            <td className="tnum px-3 py-2 text-muted">{r.support}</td>
+                            <td className="px-3 py-2">{r.label}</td>
+                            <td className="tnum px-3 py-2 text-muted">{fmt(r.precision)}%</td>
+                            <td className="tnum px-3 py-2 text-muted">{fmt(r.recall)}%</td>
+                            <td className="tnum px-3 py-2 text-muted">{fmt(r.f1)}%</td>
+                            <td className="tnum px-3 py-2 text-muted">{count(r.support)}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -67,225 +70,127 @@ function PerClassTable({ rows }) {
     );
 }
 
-function Bar({ label, value, max, color, suffix = "%" }) {
-    const safe = typeof value === "number" && Number.isFinite(value) ? value : 0;
-    const ceiling = typeof max === "number" && max > 0 ? max : Math.max(safe, 1);
-    const width = Math.max(0, Math.min(100, (safe / ceiling) * 100));
+function Verdict({ verdict }) {
+    const v = verdict || {};
     return (
-        <div>
-            <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                <span className="text-ink/90">{label}</span>
-                <span className="tnum shrink-0 text-muted">
-                    {typeof value === "number" && Number.isFinite(value)
-                        ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                        : "—"}
-                    {suffix}
-                </span>
-            </div>
-            <div role="presentation" className="h-2 overflow-hidden rounded-full bg-line">
-                <div className="h-full rounded-full" style={{ background: color, width: `${width}%` }} />
-            </div>
-        </div>
+        <p className="mt-3 text-sm leading-relaxed">
+            <strong className={toneStyle[v.tone] || ""}>{v.title || "Result"}.</strong>{" "}
+            <span className="text-muted">{v.text}</span>
+        </p>
     );
 }
 
-function StatBlock({ label, value, sub }) {
-    return (
-        <div className="rounded-lg bg-canvas px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-            <div className="tnum mt-1 text-lg font-bold text-ink">{value}</div>
-            {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
-        </div>
-    );
-}
-
-function Verdict({ tone, title, text }) {
-    const style = toneStyle[tone] || toneStyle.mid;
-    return (
-        <div className={`mt-4 rounded-lg border-l-4 px-4 py-3 text-sm leading-relaxed ${style}`}>
-            <span className="font-semibold">{title}.</span> {text}
-        </div>
-    );
-}
-
-/** The result of training a classifier: how often it was right. */
 function ClassificationResult({ result, headline, baseline }) {
-    const mistakes = result.test_rows - result.correct;
-    const v = result.verdict;
+    const rows = [
+        ["Always guess the most common class", baseline],
+        ["Training rows", result.train_accuracy],
+        ["Single held-out split", result.test_accuracy],
+    ];
 
     return (
         <>
-            <div className="grid gap-4 md:grid-cols-3">
-                <Panel
-                    title="Accuracy"
-                    subtitle={result.cv ? "Averaged over several splits of the data." : "On the held-out test rows."}
-                    className="h-full"
-                >
-                    <div className="tnum text-6xl font-bold tracking-tight text-ink">
-                        {headline.toFixed(1)}
-                        <span className="text-2xl text-muted">%</span>
-                    </div>
-                    <p className="mt-3 text-sm text-muted">
-                        {result.correct} of {result.test_rows} correct
-                        {mistakes > 0 ? ` · ${mistakes} wrong` : " · none wrong"}
-                    </p>
-                    {result.cv && (
-                        <p className="tnum mt-1 text-xs text-muted">
-                            on the single held-out split: {result.test_accuracy}%
-                        </p>
-                    )}
-                </Panel>
-
-                <Panel
-                    title="Is that good?"
-                    subtitle="A score only means something next to a baseline."
-                    className="h-full md:col-span-2"
-                >
-                    <div className="space-y-3">
-                        <Bar label="Always guess the most common class" value={baseline} color={BASELINE} />
-                        <Bar label="Training rows (it studied these)" value={result.train_accuracy} color={TRAIN} />
-                        {result.cv && (
-                            <Bar
-                                label={`Cross-validated (${result.cv.n_splits} folds — the one to trust)`}
-                                value={result.cv.mean}
-                                color={CV}
-                            />
-                        )}
-                        <Bar label="One held-out split (noisier)" value={result.test_accuracy} color={HOLDOUT} />
-                    </div>
-                    <Verdict tone={v.tone} title={v.title} text={v.text} />
-                </Panel>
-            </div>
+            <Panel
+                title="Accuracy"
+                subtitle={result.cv ? "Averaged over several splits of the data." : "On the held-out rows."}
+            >
+                <p className="text-3xl font-semibold text-ink">{headline.toFixed(1)}%</p>
+                <p className="mt-1 text-sm text-muted">
+                    {count(result.correct)} of {count(result.test_rows)} correct
+                </p>
+                <table className="mt-4 w-full text-left text-sm">
+                    <tbody>
+                        {rows.map(([label, value]) => (
+                            <tr key={label} className="border-b border-line/60 last:border-0">
+                                <td className="py-1.5 text-muted">{label}</td>
+                                <td className="tnum py-1.5 text-right">{fmt(value)}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                <Verdict verdict={result.verdict} />
+            </Panel>
 
             <RunNotes result={result} />
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <StatBlock label="Training time" value={`${result.fit_ms} ms`} />
-                <StatBlock label="Test rows" value={result.test_rows} />
-                <StatBlock
-                    label="One mistake moves the score by"
-                    value={`${result.points_per_row} pts`}
-                    sub={result.test_rows < 50 ? "Few test rows — treat this score as rough." : undefined}
-                />
-            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <Stat label="Training time" value={`${count(result.fit_ms)} ms`} />
+                <Stat label="Test rows" value={count(result.test_rows)} />
+                <Stat label="One mistake moves the score by" value={`${fmt(result.points_per_row)} pts`} />
+            </dl>
 
             <PerClassTable rows={result.per_class} />
-
             <ConfusionMatrix matrix={result.confusion_matrix} classNames={result.class_names} />
         </>
     );
 }
 
-/** The result of training a regressor: how close its guesses were. */
 function RegressionResult({ result, headline }) {
-    const v = result.verdict;
-    const r2Percent = Math.max(0, Math.round(headline * 100));
-    const improvement = result.baseline_mae > 0
-        ? Math.round((1 - result.mae / result.baseline_mae) * 100)
-        : 0;
-    const maxErr = Math.max(result.baseline_mae, result.rmse, 1);
+    const improvement =
+        typeof result.baseline_mae === "number" && result.baseline_mae > 0 &&
+        typeof result.mae === "number"
+            ? Math.round((1 - result.mae / result.baseline_mae) * 100)
+            : null;
 
     return (
         <>
-            <div className="grid gap-4 md:grid-cols-3">
-                <Panel
-                    title="How much it explains"
-                    subtitle="R-squared: the share of the variation it accounts for."
-                    className="h-full"
-                >
-                    <div className="tnum text-6xl font-bold tracking-tight text-ink">
-                        {headline.toFixed(2)}
-                    </div>
-                    <p className="mt-3 text-sm text-muted">
-                        {headline >= 0
-                            ? `Explains ${r2Percent}% of the variation`
-                            : "Worse than guessing the average"}
-                    </p>
-                    {result.cv && (
-                        <p className="tnum mt-1 text-xs text-muted">
-                            single split: {result.test_r2.toFixed(3)}
-                        </p>
-                    )}
-                </Panel>
-
-                <Panel
-                    title="How far off is it?"
-                    subtitle="Compared with always guessing the average."
-                    className="h-full md:col-span-2"
-                >
-                    <div className="space-y-3">
-                        <Bar label="Always guess the average" value={result.baseline_mae} max={maxErr} color={BASELINE} suffix="" />
-                        <Bar label="This model" value={result.mae} max={maxErr} color={CV} suffix="" />
-                    </div>
-                    <Verdict tone={v.tone} title={v.title} text={v.text} />
-                </Panel>
-            </div>
+            <Panel title="R-squared" subtitle="Share of the variation the model accounts for.">
+                <p className="text-3xl font-semibold text-ink">{headline.toFixed(2)}</p>
+                <table className="mt-4 w-full text-left text-sm">
+                    <tbody>
+                        <tr className="border-b border-line/60">
+                            <td className="py-1.5 text-muted">Mean absolute error</td>
+                            <td className="tnum py-1.5 text-right">{fmt(result.mae, 2)}</td>
+                        </tr>
+                        <tr className="border-b border-line/60">
+                            <td className="py-1.5 text-muted">Baseline mean absolute error</td>
+                            <td className="tnum py-1.5 text-right">{fmt(result.baseline_mae, 2)}</td>
+                        </tr>
+                        <tr className="border-b border-line/60">
+                            <td className="py-1.5 text-muted">Root mean squared error</td>
+                            <td className="tnum py-1.5 text-right">{fmt(result.rmse, 2)}</td>
+                        </tr>
+                        <tr>
+                            <td className="py-1.5 text-muted">Better than the average</td>
+                            <td className="tnum py-1.5 text-right">
+                                {improvement === null ? "—" : `${improvement}%`}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <Verdict verdict={result.verdict} />
+            </Panel>
 
             <RunNotes result={result} />
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <StatBlock label="Training time" value={`${result.fit_ms} ms`} />
-                <StatBlock label="Test rows" value={result.test_rows} />
-                <StatBlock label="Average target" value={result.target_mean?.toLocaleString()} />
-            </div>
-
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                <StatBlock
-                    label="Mean absolute error"
-                    value={result.mae.toLocaleString()}
-                    sub="off by this much on a typical row"
-                />
-                <StatBlock
-                    label="Root mean squared error"
-                    value={result.rmse.toLocaleString()}
-                    sub="punishes big misses more"
-                />
-                <StatBlock
-                    label="Better than the average"
-                    value={`${improvement}%`}
-                    sub="smaller error than guessing"
-                />
-            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <Stat label="Training time" value={`${count(result.fit_ms)} ms`} />
+                <Stat label="Test rows" value={count(result.test_rows)} />
+                <Stat label="Average target" value={fmt(result.target_mean, 2)} />
+            </dl>
         </>
     );
 }
 
 export default function TrainResult({ result }) {
     const isRegression = result.task === "regression";
-    const rawHeadline = result.cv
-        ? result.cv.mean
-        : isRegression
-            ? result.test_r2
-            : result.test_accuracy;
-    // A missing or garbage number must never take the page down.
-    const headline = typeof rawHeadline === "number" && Number.isFinite(rawHeadline) ? rawHeadline : 0;
+    const raw = result.cv ? result.cv.mean : isRegression ? result.test_r2 : result.test_accuracy;
+    const headline = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+    const baseline = result.cv ? result.cv_baseline?.mean : result.baseline_accuracy;
 
     return (
         <div className="mt-8">
-            <div className="mb-4 flex items-center gap-3 border-b border-line pb-4">
-                <span
-                    aria-hidden="true"
-                    className="grid h-8 w-8 place-items-center rounded-full bg-ok-soft text-sm font-bold text-ok"
-                >
-                    ✓
-                </span>
-                <div>
-                    <div className="text-lg font-bold tracking-tight text-ink">{result.label} is trained</div>
-                    <div className="text-sm text-muted">
-                        {result.cv
-                            ? `Cross-validated over ${result.cv.n_splits} folds, and scored on ${result.test_rows} held-back rows.`
-                            : `Scored on ${result.test_rows} rows it has never seen.`}
-                    </div>
-                </div>
-            </div>
+            <h3 className="text-base font-semibold text-ink">{result.label}</h3>
+            <p className="mt-1 text-sm text-muted">
+                {result.cv
+                    ? `Cross-validated over ${result.cv.n_splits} folds; ${count(result.test_rows)} held-out rows.`
+                    : `${count(result.test_rows)} held-out rows.`}
+            </p>
 
-            {isRegression
-                ? <RegressionResult result={result} headline={headline} />
-                : <ClassificationResult
-                    result={result}
-                    headline={headline}
-                    baseline={result.cv ? result.cv_baseline?.mean : result.baseline_accuracy}
-                />}
+            {isRegression ? (
+                <RegressionResult result={result} headline={headline} />
+            ) : (
+                <ClassificationResult result={result} headline={headline} baseline={baseline} />
+            )}
 
             <FoldChart
                 cv={result.cv}

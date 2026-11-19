@@ -7,37 +7,28 @@ export default function MissingBars({ columns }) {
         .slice(0, 10);
 
     return (
-        <Panel
-            title="Missing values"
-            subtitle="Empty cells per column."
-            className="h-full"
-        >
+        <Panel title="Missing values" subtitle="Empty cells per column." className="h-full">
             {gaps.length === 0 ? (
-                <p className="rounded-lg border border-ok/30 bg-ok-soft px-4 py-5 text-sm text-ok">
-                    No missing values. Nothing to fix here.
-                </p>
+                <p className="text-sm text-muted">No missing values.</p>
             ) : (
-                <ul className="space-y-3">
-                    {gaps.map((c) => (
-                        <li key={c.name}>
-                            <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                                <span className="truncate text-ink/90">{c.name}</span>
-                                <span className="tnum shrink-0 text-muted">
-                                    {c.missing} <span className="text-xs">({c.missing_pct}%)</span>
-                                </span>
-                            </div>
-                            <div
-                                role="presentation"
-                                className="h-1.5 overflow-hidden rounded-full bg-line"
-                            >
-                                <div
-                                    className={`h-full rounded-full ${c.missing_pct > 30 ? "bg-bad/80" : "bg-warn"}`}
-                                    style={{ width: `${Math.max(c.missing_pct, 1.5)}%` }}
-                                />
-                            </div>
-                        </li>
-                    ))}
-                </ul>
+                <table className="w-full text-left text-sm">
+                    <thead>
+                        <tr className="border-b border-line text-xs text-muted">
+                            <th className="py-1.5 font-medium">Column</th>
+                            <th className="py-1.5 font-medium">Cells</th>
+                            <th className="py-1.5 font-medium">Percent</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {gaps.map((c) => (
+                            <tr key={c.name} className="border-b border-line/60 last:border-0">
+                                <td className="py-1.5">{c.name}</td>
+                                <td className="tnum py-1.5">{c.missing}</td>
+                                <td className="tnum py-1.5">{c.missing_pct}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             )}
         </Panel>
     );

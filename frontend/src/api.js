@@ -48,6 +48,12 @@ export const preprocess = (id, config) =>
 export const getModels = (task) =>
     request(`/api/models${task ? `?task=${task}` : ""}`);
 
+// Saved runs from Postgres.
+export const getHistory = (limit = 10) =>
+    request(`/api/history?limit=${limit}`);
+
+export const getHistoryRun = (id) => request(`/api/history/${id}`);
+
 export const trainModel = (datasetId, modelId, tune = false) =>
     request(`/api/datasets/${datasetId}/train`, {
         method: "POST",

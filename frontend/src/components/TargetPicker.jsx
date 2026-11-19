@@ -1,67 +1,44 @@
 import Panel from "./Panel";
 
-const taskStyle = {
-    classification: "bg-accent-soft text-accent",
-    regression: "bg-warn-soft text-warn",
-};
-
-/**
- * Lets the user pick any column as the target, not just the ones with a
- * friendly number of classes. The backend suggests which columns look like
- * good targets and says why; the choice stays with the user.
- */
 export default function TargetPicker({ dataset, task, onTask, value, onChange }) {
     const columns = dataset.columns || [];
     const suggestions = dataset.target_suggestions || [];
     const suggested = new Set(suggestions.map((s) => s.name));
 
     return (
-        <Panel
-            title="What do you want to predict?"
-            subtitle="Pick any column. We will work out the rest."
-        >
+        <Panel title="Target" subtitle="Pick the column to predict.">
             <div className="space-y-4">
                 {suggestions.length > 0 && (
                     <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                            Good candidates
-                        </div>
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {suggestions.map((s) => {
-                                const active = s.name === value;
-                                return (
-                                    <button
-                                        key={s.name}
-                                        type="button"
-                                        onClick={() => onChange(s.name)}
-                                        title={s.detail}
-                                        className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                                            active
-                                                ? "border-accent bg-accent-soft text-accent"
-                                                : "border-line bg-surface text-muted hover:text-ink"
-                                        }`}
-                                    >
-                                        {s.name}
-                                        <span
-                                            className={`ml-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${taskStyle[s.task] || ""}`}
-                                        >
-                                            {s.task === "regression" ? "number" : "label"}
-                                        </span>
-                                    </button>
-                                );
-                            })}
+                        <p className="text-xs text-muted">Suggested columns</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {suggestions.map((s) => (
+                                <button
+                                    key={s.name}
+                                    type="button"
+                                    onClick={() => onChange(s.name)}
+                                    className={`rounded-md border px-2.5 py-1 text-sm ${
+                                        s.name === value
+                                            ? "border-accent bg-accent-soft"
+                                            : "border-line bg-surface"
+                                    }`}
+                                >
+                                    {s.name}{" "}
+                                    <span className="text-xs text-muted">
+                                        ({s.task === "regression" ? "number" : "label"})
+                                    </span>
+                                </button>
+                            ))}
                         </div>
                     </div>
                 )}
 
                 <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                        All {columns.length} columns
-                    </div>
+                    <p className="text-xs text-muted">All columns</p>
                     <select
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
-                        className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
+                        className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
                     >
                         {columns.map((c) => (
                             <option key={c.name} value={c.name}>
@@ -73,38 +50,28 @@ export default function TargetPicker({ dataset, task, onTask, value, onChange })
                 </div>
 
                 <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                        What kind of answer?
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <p className="text-xs text-muted">Task</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
                         {[
-                            { value: "classification", label: "A label", hint: "One of a fixed set: yes/no, a species, a tier." },
-                            { value: "regression", label: "A number", hint: "A quantity: a price, a temperature, a count." },
-                            { value: "auto", label: "Decide for me", hint: "We look at the column and pick the sensible one." },
-                        ].map((option) => (
+                            ["classification", "A label"],
+                            ["regression", "A number"],
+                            ["auto", "Decide for me"],
+                        ].map(([value_, label]) => (
                             <button
-                                key={option.value}
+                                key={value_}
                                 type="button"
-                                onClick={() => onTask(option.value)}
-                                title={option.hint}
-                                aria-pressed={task === option.value}
-                                className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-                                    task === option.value
-                                        ? "border-accent bg-accent-soft font-medium text-accent"
-                                        : "border-line bg-surface text-muted hover:text-ink"
+                                onClick={() => onTask(value_)}
+                                aria-pressed={task === value_}
+                                className={`rounded-md border px-3 py-1.5 text-sm ${
+                                    task === value_
+                                        ? "border-accent bg-accent-soft"
+                                        : "border-line bg-surface"
                                 }`}
                             >
-                                {option.label}
+                                {label}
                             </button>
                         ))}
                     </div>
-                    <p className="mt-1.5 text-xs text-muted">
-                        {task === "auto"
-                            ? "We will look at the target column and choose."
-                            : task === "regression"
-                                ? "A number to predict. Scored with R-squared and error in the same unit."
-                                : "A label to predict. Scored with accuracy, precision, recall and F1."}
-                    </p>
                 </div>
             </div>
         </Panel>
