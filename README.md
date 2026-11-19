@@ -11,6 +11,7 @@ A local tool for training models on CSV files. Upload a file, inspect and clean 
 - Classification: accuracy, precision, recall, F1 (macro and weighted), ROC AUC, per-class metrics and a confusion matrix.
 - Regression: R², MAE and RMSE, compared with a model that always predicts the mean.
 - Class weighting for imbalanced targets and an optional randomized parameter search.
+- Scoring of new rows through the API. The fitted cleaner and preprocessor are stored with the model, so raw CSV-shaped rows can be sent for prediction.
 - Optional Postgres storage for datasets and past runs. The app still works if the database is unavailable; responses then include `persisted: false`.
 
 ## Run locally
@@ -63,6 +64,7 @@ CI runs lint, backend tests against a Postgres service, frontend tests and a pro
 | POST | `/api/datasets/{id}/preprocess` | Apply cleaning, splitting and preprocessing settings |
 | GET | `/api/models?task=` | List algorithms for a task |
 | POST | `/api/datasets/{id}/train` | Train one model; returns scores and verdict |
+| POST | `/api/datasets/{id}/predict` | Score new rows with a trained model |
 | GET | `/api/history` | List recent saved runs |
 | GET | `/api/history/{id}` | Full saved result for one run |
 | GET | `/api/health` | API and database status |
@@ -92,8 +94,10 @@ Quick tune reports a nested cross-validation estimate: an inner search selects p
 
 Cleaning that runs before the split (number parsing, unit conversion, spelling folding) is unsupervised and does not use target values. Some of it inspects all rows, including rows that later land in the test set. Everything that learns from data is fitted inside the fold.
 
+The verdict compares a score with a baseline from the same source. The margin around the baseline grows with the fold spread, so a small lead on an unstable score is reported as noise. The overfitting check compares accuracy on the training folds with accuracy on held-out folds, not with a separate single split.
+
 ## Not implemented
 
 - Feature importance
-- Prediction interface for new rows
+- UI for predicting new rows
 - Deployment configuration
