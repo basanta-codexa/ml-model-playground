@@ -1,21 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { getModels, trainModel } from "../api";
 import ModelPicker from "./ModelPicker";
-import TrainingScreen from "./TrainingScreen";
 import TrainResult from "./TrainResult";
 import Scoreboard from "./Scoreboard";
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function Training({ dataset, prepared }) {
     const task = prepared?.task || "classification";
     const [models, setModels] = useState([]);
     const [selected, setSelected] = useState("");
-    const [results, setResults] = useState({}); // model_id -> result
-    const [phase, setPhase] = useState("idle"); // "idle" | "training"
-    const [ready, setReady] = useState(false);
+    const [results, setResults] = useState({});
+    const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [tune, setTune] = useState(false);
+    const [notSaved, setNotSaved] = useState(false);
 
     const alive = useRef(true);
     useEffect(() => {
@@ -37,102 +34,85 @@ export default function Training({ dataset, prepared }) {
             .catch((e) => setError(e.message));
     }, [task]);
 
-    // Preparing the data again means every trained model is out of date
     useEffect(() => {
         setResults({});
     }, [prepared]);
 
+    const current = models.find((m) => m.id === selected);
+
     async function train() {
-        setPhase("training");
-        setReady(false);
+        setBusy(true);
         setError("");
         try {
-            // Wait for BOTH the real answer and a minimum animation time
-            const [res] = await Promise.all([trainModel(dataset.dataset_id, selected, tune), sleep(1400)]);
+            const res = await trainModel(dataset.dataset_id, selected, tune);
             if (!alive.current) return;
-            setReady(true);
-            await sleep(400);
-            if (!alive.current) return;
+            setNotSaved(res.persisted === false);
             setResults((r) => ({ ...r, [res.model_id]: res }));
         } catch (e) {
             if (alive.current) setError(e.message);
         } finally {
-            if (alive.current) {
-                setPhase("idle");
-                setReady(false);
-            }
+            if (alive.current) setBusy(false);
         }
     }
 
-    const heading = (
-        <div className="mt-12 border-b border-line pb-3">
-            <h2 className="text-2xl font-bold tracking-tight text-ink">Train a model</h2>
-            <p className="mt-1 text-sm text-muted">
-                {task === "regression"
-                    ? "Each algorithm predicts a number in its own way. Pick one, train it, and see how close its guesses are."
-                    : "Each algorithm learns differently. Pick one, train it, and see how it does on rows it has never seen."}
-            </p>
-        </div>
-    );
-
-    if (!prepared) {
-        return (
-            <section className="mt-4">
-                {heading}
-                <div className="mt-4 rounded-xl border border-dashed border-line bg-surface px-6 py-8 text-center text-sm text-muted">
-                    Prepare your data above to unlock training.
-                </div>
-            </section>
-        );
-    }
-
-    const current = models.find((m) => m.id === selected);
-    const trainedIds = Object.keys(results);
-
     return (
-        <section className="mt-4">
-            {heading}
+        <section className="mt-10">
+            <h2 className="border-b border-line pb-3 text-lg font-semibold text-ink">
+                Train a model
+            </h2>
 
-            <div className="mt-4">
-                <ModelPicker models={models} selected={selected} onSelect={setSelected} trainedIds={trainedIds} />
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-4">
-                <button
-                    type="button"
-                    onClick={train}
-                    disabled={phase === "training" || !current}
-                    className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
-                >
-                    {phase === "training" ? "Training…" : tune && current?.tunable ? `Tune & train ${current?.label}` : `Train ${current?.label ?? "model"}`}
-                </button>
-
-                {current?.tunable && (
-                    <label
-                        className="flex cursor-pointer select-none items-center gap-2 text-sm text-muted"
-                        title="Try a handful of settings with a small randomized search, refit the best, and tell you which one won. A little slower, usually a little better."
-                    >
-                        <input
-                            type="checkbox"
-                            checked={tune}
-                            onChange={(e) => setTune(e.target.checked)}
-                            className="h-4 w-4 accent-blue-600"
+            {!prepared ? (
+                <p className="mt-4 text-sm text-muted">Prepare the data above to unlock training.</p>
+            ) : (
+                <>
+                    <div className="mt-4">
+                        <ModelPicker
+                            models={models}
+                            selected={selected}
+                            onSelect={setSelected}
+                            trainedIds={Object.keys(results)}
                         />
-                        Quick tune
-                    </label>
-                )}
-            </div>
+                    </div>
 
-            {error && (
-                <p className="mt-3 rounded-lg border border-bad/30 bg-bad-soft px-4 py-3 text-sm text-bad">
-                    {error}
-                </p>
+                    <div className="mt-4 flex flex-wrap items-center gap-4">
+                        <button
+                            type="button"
+                            onClick={train}
+                            disabled={busy || !current}
+                            className="rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy ? "Training…" : `Train ${current?.label ?? "model"}`}
+                        </button>
+
+                        {current?.tunable && (
+                            <label className="flex items-center gap-2 text-sm text-muted">
+                                <input
+                                    type="checkbox"
+                                    checked={tune}
+                                    onChange={(e) => setTune(e.target.checked)}
+                                />
+                                Quick tune (small randomized search)
+                            </label>
+                        )}
+                    </div>
+
+                    {busy && <p className="mt-3 text-sm text-muted">Training…</p>}
+                    {error && <p className="mt-3 text-sm text-bad">{error}</p>}
+                    {notSaved && (
+                        <p className="mt-3 text-sm text-warn">
+                            The database is unavailable, so this run was not saved.
+                        </p>
+                    )}
+
+                    {!busy && results[selected] && (
+                        <TrainResult key={selected} result={results[selected]} />
+                    )}
+
+                    {Object.keys(results).length > 0 && (
+                        <Scoreboard results={Object.values(results)} />
+                    )}
+                </>
             )}
-
-            {phase === "training" && <TrainingScreen modelLabel={current?.label} ready={ready} />}
-            {phase === "idle" && results[selected] && <TrainResult key={selected} result={results[selected]} />}
-
-            {trainedIds.length > 0 && <Scoreboard results={Object.values(results)} />}
         </section>
     );
 }
