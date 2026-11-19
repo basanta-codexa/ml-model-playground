@@ -9,6 +9,29 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+
+    # Persistence tests need a real Postgres. The image creates the
+    # ml_playground database; conftest.py connects to it over port 5433 to
+    # CREATE the separate ml_playground_test database before the suite runs.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ml_playground
+          POSTGRES_PASSWORD: ml_playground
+          POSTGRES_DB: ml_playground
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ML_PLAYGROUND_TEST_DATABASE_URL: postgresql://ml_playground:ml_playground@127.0.0.1:5433/ml_playground_test
+      ML_PLAYGROUND_ADMIN_DATABASE_URL: postgresql://ml_playground:ml_playground@127.0.0.1:5433/ml_playground
+
     steps:
       - uses: actions/checkout@v4
 
