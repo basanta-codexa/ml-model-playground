@@ -1,0 +1,31 @@
+# Development database for the ML Playground backend.
+#   docker compose up -d db
+# Creates a persistent Postgres on port 5433 with a single dev role and an
+# empty database. The app reads its location from DATABASE_URL
+# (default: postgresql://ml_playground:ml_playground@127.0.0.1:5433/ml_playground).
+#
+# This is a local-development convenience, not a deployment. For a real
+# deployment, point DATABASE_URL at your own managed instance and rotate
+# these credentials.
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: ml-playground-db
+    environment:
+      POSTGRES_USER: ml_playground
+      POSTGRES_PASSWORD: ml_playground
+      POSTGRES_DB: ml_playground
+    ports:
+      - "5433:5432"
+    volumes:
+      # Postgres 18 images want the mount at the parent directory; data lives
+      # in a major-version-specific subdirectory inside it.
+      - ml_playground_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ml_playground -d ml_playground"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  ml_playground_pgdata:
